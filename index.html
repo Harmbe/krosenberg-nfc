@@ -781,6 +781,46 @@
   </div>
 </header>
 
+<!-- REKENING MODAL -->
+<div class="modal-overlay" id="rekening-modal">
+  <div class="pin-modal" style="max-width:520px;width:95%;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <h2 style="margin:0" id="rek-naam">—</h2>
+        <div style="font-size:0.85rem;color:var(--kr-muted)" id="rek-plek">—</div>
+      </div>
+      <button onclick="sluitRekening()" style="background:transparent;border:none;font-size:1.4rem;cursor:pointer;color:var(--kr-muted)">✕</button>
+    </div>
+
+    <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px;background:#fff8e1;border:2px solid #f4d03f;border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:0.8rem;color:#7d6608">Openstaand</div>
+        <div style="font-size:1.6rem;font-weight:700;color:#7d6608" id="rek-openstaand">€0,00</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:#e8f5e0;border:2px solid #4a7c2f;border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:0.8rem;color:#2d4a1e">Totaal afgerekend</div>
+        <div style="font-size:1.6rem;font-weight:700;color:#2d4a1e" id="rek-betaald">€0,00</div>
+      </div>
+      <div style="flex:1;min-width:120px;background:var(--kr-cream);border:1px solid var(--kr-leem);border-radius:10px;padding:12px;text-align:center">
+        <div style="font-size:0.8rem;color:var(--kr-muted)">Totaal geconsumeerd</div>
+        <div style="font-size:1.6rem;font-weight:700;color:var(--kr-forest)" id="rek-totaal">€0,00</div>
+      </div>
+    </div>
+
+    <h4 style="color:var(--kr-forest);margin-bottom:8px;font-size:0.9rem">Consumpties</h4>
+    <table class="log-tabel" style="margin-bottom:16px">
+      <thead><tr><th>Tijd</th><th>Omschrijving</th><th>Bedrag</th><th>Status</th></tr></thead>
+      <tbody id="rek-log-tbody"></tbody>
+    </table>
+
+    <h4 style="color:var(--kr-forest);margin-bottom:8px;font-size:0.9rem">Afrekeningen</h4>
+    <table class="log-tabel">
+      <thead><tr><th>Datum</th><th>Tijd</th><th>Bedrag</th><th>Wijze</th></tr></thead>
+      <tbody id="rek-bet-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- PINCODE MODAL -->
 <div class="modal-overlay" id="pin-modal">
   <div class="pin-modal">
@@ -919,8 +959,8 @@
       </div>
     </div>
 
-    <div class="beheer-card">
-      <h3>Openstaande bedragen per gast</h3>
+    <div class="beheer-card" style="grid-column: span 2">
+      <h3>Rekeningen per gast</h3>
       <div class="leden-lijst" id="leden-lijst"></div>
     </div>
 
@@ -1143,6 +1183,54 @@ function controleerPin() {
   }
 }
 
+async function toonRekening(uid) {
+  const g = gasten[uid];
+  const log        = await DB.getLog();
+  const betalingen = await DB.getBetalingen();
+
+  const lidLog = log.filter(r => r.lid_uid === uid);
+  const lidBet = betalingen.filter(b => b.lid_uid === uid);
+  const totaalBetaald    = lidBet.reduce((s, b) => s + Number(b.bedrag), 0);
+  const totaalGeconsumeerd = lidLog.reduce((s, r) => s + Number(r.totaal), 0);
+
+  document.getElementById('rek-naam').textContent = g.naam;
+  document.getElementById('rek-plek').textContent = 'Plek ' + g.plek;
+  document.getElementById('rek-openstaand').textContent = '€' + Number(g.openstaand||0).toFixed(2).replace('.', ',');
+  document.getElementById('rek-betaald').textContent    = '€' + totaalBetaald.toFixed(2).replace('.', ',');
+  document.getElementById('rek-totaal').textContent     = '€' + totaalGeconsumeerd.toFixed(2).replace('.', ',');
+
+  document.getElementById('rek-log-tbody').innerHTML = lidLog.length === 0
+    ? '<tr><td colspan="4" style="color:var(--kr-muted);padding:10px">Geen consumpties</td></tr>'
+    : lidLog.map(r => {
+        const d = new Date(r.geregistreerd_op);
+        const open = r.geregistreerd_op > (lidBet[lidBet.length-1]?.betaald_op || '');
+        return `<tr>
+          <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
+          <td>${r.omschrijving}</td>
+          <td>€${Number(r.totaal).toFixed(2).replace('.', ',')}</td>
+          <td style="color:${open ? '#e67e22' : '#27ae60'};font-weight:600">${open ? 'Open' : 'Voldaan'}</td>
+        </tr>`;
+      }).join('');
+
+  document.getElementById('rek-bet-tbody').innerHTML = lidBet.length === 0
+    ? '<tr><td colspan="4" style="color:var(--kr-muted);padding:10px">Nog niet afgerekend</td></tr>'
+    : lidBet.map(b => {
+        const d = new Date(b.betaald_op);
+        return `<tr>
+          <td>${d.toLocaleDateString('nl-NL')}</td>
+          <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
+          <td style="font-weight:600">€${Number(b.bedrag).toFixed(2).replace('.', ',')}</td>
+          <td>${b.wijze || 'contant'}</td>
+        </tr>`;
+      }).join('');
+
+  document.getElementById('rekening-modal').classList.add('open');
+}
+
+function sluitRekening() {
+  document.getElementById('rekening-modal').classList.remove('open');
+}
+
 function sluitPinModal() {
   document.getElementById('pin-modal').classList.remove('open');
 }
@@ -1274,15 +1362,16 @@ async function renderBeheer() {
   document.getElementById('totaal-openstaand').textContent = '€' + totalOpenstaand.toFixed(2).replace('.', ',');
 
   document.getElementById('leden-lijst').innerHTML = Object.entries(gasten).map(([uid, g]) => `
-    <div class="lid-row">
-      <div>
+    <div class="lid-row" style="cursor:pointer" onclick="toonRekening('${uid}')">
+      <div style="flex:1">
         <div class="lid-naam">${g.naam}</div>
-        <div class="lid-plek">Plek ${g.plek} · UID: ${uid}</div>
+        <div class="lid-plek">Plek ${g.plek}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span class="${g.openstaand > 0 ? 'lid-openstaand' : 'lid-nul'}">€${(g.openstaand||0).toFixed(2).replace('.', ',')}</span>
-        <button class="afrekenen-btn" ${!g.openstaand ? 'disabled' : ''} onclick="afrekenen('${uid}')">Afgerekend</button>
-      </div>
+      <span class="${(g.openstaand||0) > 0 ? 'lid-openstaand' : 'lid-nul'}" style="margin-right:8px">
+        ${(g.openstaand||0) > 0 ? '⚠️ €' + Number(g.openstaand).toFixed(2).replace('.', ',') + ' open' : '✓ Afgerekend'}
+      </span>
+      <button class="afrekenen-btn" ${!(g.openstaand||0) ? 'disabled' : ''} onclick="event.stopPropagation();afrekenen('${uid}')">Afrekenen</button>
+      <span style="color:var(--kr-muted);margin-left:8px;font-size:0.9rem">›</span>
     </div>
   `).join('');
 
