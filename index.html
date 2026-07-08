@@ -951,8 +951,8 @@
 
 <!-- REKENING MODAL -->
 <div class="modal-overlay" id="rekening-modal">
-  <div class="pin-modal" style="max-width:520px;width:95%;text-align:left">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <div class="pin-modal" style="max-width:520px;width:95%;text-align:left;max-height:90vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-shrink:0">
       <div>
         <h2 style="margin:0" id="rek-naam">—</h2>
         <div style="font-size:0.85rem;color:var(--kr-muted)" id="rek-plek">—</div>
@@ -963,6 +963,7 @@
       </div>
     </div>
 
+    <div style="overflow-y:auto;flex:1;min-height:0">
     <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
       <div style="flex:1;min-width:120px;background:#fff8e1;border:2px solid #f4d03f;border-radius:10px;padding:12px;text-align:center">
         <div style="font-size:0.8rem;color:#7d6608">Openstaand</div>
@@ -989,6 +990,7 @@
       <thead><tr><th>Datum</th><th>Tijd</th><th>Bedrag</th><th>Wijze</th></tr></thead>
       <tbody id="rek-bet-tbody"></tbody>
     </table>
+    </div><!-- einde scroll-wrapper -->
   </div>
 </div>
 
