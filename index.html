@@ -1048,6 +1048,16 @@
   </div>
 </div>
 
+<!-- BETALING VERWERKING OVERLAY -->
+<div id="verwerking-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:20px;padding:36px 40px;max-width:400px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.25)">
+    <div style="font-size:2.8rem;margin-bottom:12px">💳</div>
+    <h2 style="margin:0 0 8px;color:var(--kr-forest);font-size:1.3rem">Betaling wordt verwerkt</h2>
+    <div id="verwerking-regel1" style="margin-top:20px;padding:12px 16px;background:var(--kr-cream);border-radius:10px;font-size:0.95rem;color:var(--kr-forest);font-weight:600;min-height:44px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s"></div>
+    <div id="verwerking-regel2" style="margin-top:10px;padding:12px 16px;background:var(--kr-cream);border-radius:10px;font-size:0.95rem;color:var(--kr-forest);font-weight:600;min-height:44px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s"></div>
+  </div>
+</div>
+
 <!-- GAST PINCODE MODAL -->
 <div class="modal-overlay" id="gast-pin-modal">
   <div class="pin-modal">
@@ -2414,8 +2424,26 @@ function tekenQR(url, bedrag) {
 }
 
 function bevestigBetaling() {
-  gastRekentAf();
+  const ov = document.getElementById('verwerking-overlay');
+  document.getElementById('verwerking-regel1').style.opacity = '0';
+  document.getElementById('verwerking-regel1').textContent = '';
+  document.getElementById('verwerking-regel2').style.opacity = '0';
+  document.getElementById('verwerking-regel2').textContent = '';
+  ov.style.display = 'flex';
   toonScherm('tap');
+  gastRekentAf();
+}
+
+function _verwerkingRegel(nr, tekst) {
+  const el = document.getElementById('verwerking-regel' + nr);
+  el.textContent = tekst;
+  el.style.color = tekst.startsWith('⚠️') ? '#c0392b' : 'var(--kr-forest)';
+  requestAnimationFrame(() => { el.style.opacity = '1'; });
+  if (nr === 2) {
+    setTimeout(() => {
+      document.getElementById('verwerking-overlay').style.display = 'none';
+    }, 4000);
+  }
 }
 
 async function gastRekentAf(wijze = 'contant') {
@@ -2433,13 +2461,10 @@ async function gastRekentAf(wijze = 'contant') {
     : Number(document.getElementById('betaal-bedrag').textContent.replace('€','').replace(',','.')) || gast.openstaand;
 
   await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: betaaldBedrag, wijze });
-  toonToast(`✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
-  // openstaand op 0 na betaling van het volledige openstaande bedrag
+  _verwerkingRegel(1, `✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
   gast.openstaand = 0;
   await DB.upsertLid(gast);
 
-  // Stuur bon per e-mail (op de achtergrond)
-  console.log('[bon] isOnline:', isOnline, '| openLog.length:', openLog.length, '| plek:', gast.plek);
   if (isOnline && openLog.length > 0) {
     fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
       method: 'POST',
@@ -2447,11 +2472,11 @@ async function gastRekentAf(wijze = 'contant') {
       body: JSON.stringify({ plek_code: gast.plek, email: gast.email || null, naam: gast.naam, bestellingen: openLog, totaal_bedrag: betaaldBedrag }),
     }).then(r => r.json()).then(d => {
       console.log('[bon] response:', d);
-      if (d.ok) toonToast(`📧 Bon verstuurd naar ${d.email}`);
-      else toonToast(`⚠️ Bon niet verstuurd: ${d.fout || JSON.stringify(d)}`);
-    }).catch(e => toonToast('⚠️ Bon fout: ' + e.message));
+      if (d.ok) _verwerkingRegel(2, `📧 Bon verstuurd naar ${d.email}`);
+      else _verwerkingRegel(2, `⚠️ Bon niet verstuurd: ${d.fout || JSON.stringify(d)}`);
+    }).catch(e => _verwerkingRegel(2, '⚠️ Bon fout: ' + e.message));
   } else {
-    toonToast(`⚠️ Bon NIET verstuurd (online:${isOnline}, regels:${openLog.length})`);
+    _verwerkingRegel(2, `⚠️ Geen bon (online:${isOnline}, regels:${openLog.length})`);
   }
 }
 
