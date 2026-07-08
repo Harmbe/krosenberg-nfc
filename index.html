@@ -105,6 +105,7 @@
   .nfc-icon:hover { transform: scale(1.05); background: var(--kr-forest); }
   .nfc-icon:hover span { filter: invert(1); }
 
+  @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(74,124,47,0.4); }
     50% { box-shadow: 0 0 0 16px rgba(74,124,47,0); }
@@ -1052,7 +1053,8 @@
 <div id="verwerking-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2000;align-items:center;justify-content:center">
   <div style="background:white;border-radius:20px;padding:36px 40px;max-width:400px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.25)">
     <div style="font-size:2.8rem;margin-bottom:12px">💳</div>
-    <h2 style="margin:0 0 8px;color:var(--kr-forest);font-size:1.3rem">Betaling wordt verwerkt</h2>
+    <h2 style="margin:0 0 4px;color:var(--kr-forest);font-size:1.3rem">Betaling wordt verwerkt</h2>
+    <div id="verwerking-spinner" style="margin:10px auto;width:28px;height:28px;border:3px solid var(--kr-leem);border-top-color:var(--kr-forest);border-radius:50%;animation:spin 0.8s linear infinite"></div>
     <div id="verwerking-regel1" style="margin-top:20px;padding:12px 16px;background:var(--kr-cream);border-radius:10px;font-size:0.95rem;color:var(--kr-forest);font-weight:600;min-height:44px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s"></div>
     <div id="verwerking-regel2" style="margin-top:10px;padding:12px 16px;background:var(--kr-cream);border-radius:10px;font-size:0.95rem;color:var(--kr-forest);font-weight:600;min-height:44px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s"></div>
   </div>
@@ -2424,14 +2426,14 @@ function tekenQR(url, bedrag) {
 }
 
 function bevestigBetaling() {
-  const ov = document.getElementById('verwerking-overlay');
   document.getElementById('verwerking-regel1').style.opacity = '0';
   document.getElementById('verwerking-regel1').textContent = '';
   document.getElementById('verwerking-regel2').style.opacity = '0';
   document.getElementById('verwerking-regel2').textContent = '';
-  ov.style.display = 'flex';
+  document.getElementById('verwerking-spinner').style.display = 'block';
+  document.getElementById('verwerking-overlay').style.display = 'flex';
+  gastRekentAf();   // vangt huidigeBandje op vóór toonScherm het reset
   toonScherm('tap');
-  gastRekentAf();
 }
 
 function _verwerkingRegel(nr, tekst) {
@@ -2440,6 +2442,7 @@ function _verwerkingRegel(nr, tekst) {
   el.style.color = tekst.startsWith('⚠️') ? '#c0392b' : 'var(--kr-forest)';
   requestAnimationFrame(() => { el.style.opacity = '1'; });
   if (nr === 2) {
+    document.getElementById('verwerking-spinner').style.display = 'none';
     setTimeout(() => {
       document.getElementById('verwerking-overlay').style.display = 'none';
     }, 4000);
