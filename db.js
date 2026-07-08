@@ -75,7 +75,12 @@ async function syncWachtrij() {
       console.warn('[sync] Item permanent overgeslagen na 5 pogingen:', item);
       continue;
     }
-    const data = JSON.parse(item.data);
+    let data = JSON.parse(item.data);
+    // Strip velden die niet in het Supabase-schema horen (voorkomt 400-fouten)
+    if (item.tabel === 'producten') {
+      const toegestaan = ['id','naam','prijs','emoji','categorie','omschr','voorraad','laag_waarschuwing','actief','aangemaakt_op','bijgewerkt_op','volgorde'];
+      data = Object.fromEntries(Object.entries(data).filter(([k]) => toegestaan.includes(k)));
+    }
     let ok = false;
     let fout = null;
     try {
