@@ -2423,7 +2423,6 @@ async function gastRekentAf(wijze = 'contant') {
   toonToast(`✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
   gast.openstaand = 0;
   await DB.upsertLid(gast);
-  updateAfrekenenBlok();
 
   // Stuur bon per e-mail (op de achtergrond)
   console.log('[bon] isOnline:', isOnline, '| openLog.length:', openLog.length, '| plek:', gast.plek);
