@@ -2685,9 +2685,12 @@ function _volgendeToast() {
   if (!_toastWachtrij.length) { _toastBezig = false; return; }
   _toastBezig = true;
   const t = document.getElementById('toast');
-  t.textContent = _toastWachtrij.shift();
+  const tekst = _toastWachtrij.shift();
+  t.textContent = tekst;
   t.classList.add('show');
-  setTimeout(() => { t.classList.remove('show'); setTimeout(_volgendeToast, 300); }, 3000);
+  const duur = tekst.startsWith('⚠️') ? 8000 : 3000;
+  if (tekst.startsWith('⚠️')) console.warn('[toast]', tekst);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(_volgendeToast, 300); }, duur);
 }
 
 // ── Opstarten ─────────────────────────────────────────────────────────────────
