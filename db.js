@@ -12,6 +12,23 @@ db.version(1).stores({
   betalingen: 'id, lid_uid',
   sync_queue: '++id, tabel, actie, [gesyncroniseerd+aangemaakt_op]',
 });
+db.version(2).stores({
+  leden:      'uid, plek, naam',
+  producten:  'id, naam',
+  log:        'id, lid_uid',
+  betalingen: 'id, lid_uid',
+  sync_queue: '++id, tabel, actie, [gesyncroniseerd+aangemaakt_op]',
+  plekken:    'plek_code, bandje_uid',
+});
+db.version(3).stores({
+  leden:      'uid, plek, naam',
+  producten:  'id, naam',
+  log:        'id, lid_uid',
+  betalingen: 'id, lid_uid',
+  sync_queue: '++id, tabel, actie, [gesyncroniseerd+aangemaakt_op]',
+  plekken:    'plek_code',
+  bandjes:    'bandje_uid, koppeling_type, koppeling_id',
+});
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -51,20 +68,33 @@ async function schrijf(tabel, actie, data) {
 async function syncWachtrij() {
   const wachtrij = await db.sync_queue.where('gesyncroniseerd').equals(0).toArray();
   for (const item of wachtrij) {
+    const pogingen = item.pogingen || 0;
+    if (pogingen >= 5) {
+      // Na 5 mislukte pogingen overslaan zodat de badge niet blijft hangen
+      await db.sync_queue.update(item.id, { gesyncroniseerd: 2 }); // 2 = permanent mislukt
+      console.warn('[sync] Item permanent overgeslagen na 5 pogingen:', item);
+      continue;
+    }
     const data = JSON.parse(item.data);
     let ok = false;
+    let fout = null;
     try {
       if (item.actie === 'upsert') {
         const { error } = await supa.from(item.tabel).upsert(data);
-        ok = !error;
+        ok = !error; fout = error;
       } else if (item.actie === 'delete') {
         const sleutel = item.tabel === 'leden' ? 'uid' : 'id';
         const { error } = await supa.from(item.tabel).delete().eq(sleutel, data[sleutel]);
-        ok = !error;
+        ok = !error; fout = error;
       }
-    } catch { ok = false; }
+    } catch (e) { ok = false; fout = e; }
 
-    if (ok) await db.sync_queue.update(item.id, { gesyncroniseerd: 1 });
+    if (ok) {
+      await db.sync_queue.update(item.id, { gesyncroniseerd: 1 });
+    } else {
+      console.warn(`[sync] Poging ${pogingen + 1} mislukt voor ${item.tabel}/${item.actie}:`, fout, data);
+      await db.sync_queue.update(item.id, { pogingen: pogingen + 1 });
+    }
   }
   updateSyncBadge();
 }
@@ -72,20 +102,23 @@ async function syncWachtrij() {
 async function updateSyncBadge() {
   const wachtend = await db.sync_queue.where('gesyncroniseerd').equals(0).count();
   const el = document.getElementById('sync-wachtrij');
-  if (!el) return;
-  el.textContent = wachtend > 0 ? `⏳ ${wachtend} wachtend` : '';
+  if (el) el.textContent = wachtend > 0 ? `⏳ ${wachtend} wachtend` : '';
+  const detail = document.getElementById('sync-wachtrij-detail');
+  if (detail) detail.textContent = wachtend > 0 ? `⏳ ${wachtend} item${wachtend === 1 ? '' : 's'} wachtend` : '✅ Alles gesynchroniseerd';
 }
 
 // ── Initieel laden: Supabase → IndexedDB ──────────────────────────────────────
 async function laadVanSupabase() {
   if (!isOnline) return;
   try {
-    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }] =
+    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }] =
       await Promise.all([
         supa.from('leden').select('*'),
         supa.from('producten').select('*'),
         supa.from('consumptie_log').select('*, consumptie_regels(*)'),
         supa.from('betalingen').select('*'),
+        supa.from('plekken').select('*'),
+        supa.from('bandjes').select('*'),
       ]);
 
     if (leden)     await db.leden.bulkPut(leden);
@@ -95,15 +128,39 @@ async function laadVanSupabase() {
       items: (r.consumptie_regels || []).map(x => [x.product_naam, { prijs: x.prijs, aantal: x.aantal }]),
     })));
     if (betalingen) await db.betalingen.bulkPut(betalingen);
+    if (plekken)    await db.plekken.bulkPut(plekken);
+    if (bandjes)    await db.bandjes.bulkPut(bandjes);
   } catch (e) { console.warn('Supabase laden mislukt, gebruik lokale data', e); }
 }
 
 // ── Data-toegang (altijd via IndexedDB) ───────────────────────────────────────
 const DB = {
   async getLeden()     { return db.leden.toArray(); },
+  async getPlekken()   { return db.plekken.toArray(); },
+  async getBandjes()   { return db.bandjes.toArray(); },
   async getProducten() { return db.producten.toArray(); },
-  async getLog()       { return db.log.orderBy('geregistreerd_op').reverse().toArray(); },
-  async getBetalingen(){ return db.betalingen.orderBy('betaald_op').reverse().toArray(); },
+
+  async upsertPlek(plek) {
+    await db.plekken.put(plek);
+    await supa.from('plekken').upsert(plek);
+  },
+  async verwijderPlek(plek_code) {
+    await db.plekken.delete(plek_code);
+    await supa.from('plekken').delete().eq('plek_code', plek_code);
+  },
+  async upsertBandje(bandje) {
+    await db.bandjes.put(bandje);
+    if (isOnline) await supa.from('bandjes').upsert(bandje);
+  },
+  async verwijderBandje(bandje_uid) {
+    await db.bandjes.delete(bandje_uid);
+    if (isOnline) await supa.from('bandjes').delete().eq('bandje_uid', bandje_uid);
+  },
+  async getBandjesVoor(koppeling_id) {
+    return db.bandjes.where('koppeling_id').equals(koppeling_id).toArray();
+  },
+  async getLog()       { return (await db.log.toArray()).sort((a,b) => b.geregistreerd_op?.localeCompare(a.geregistreerd_op)); },
+  async getBetalingen(){ return (await db.betalingen.toArray()).sort((a,b) => b.betaald_op?.localeCompare(a.betaald_op)); },
 
   async upsertLid(lid) {
     lid.bijgewerkt_op = new Date().toISOString();
@@ -132,6 +189,7 @@ const DB = {
         const { data: logRij } = await supa.from('consumptie_log').insert({
           id: entry.id,
           lid_uid: entry.lid_uid,
+          naam: entry.naam,
           omschrijving: entry.omschrijving,
           totaal: entry.totaal,
           geregistreerd_op: entry.geregistreerd_op,
