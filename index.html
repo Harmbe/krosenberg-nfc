@@ -21,11 +21,14 @@
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
+  html { overflow: hidden; }
+
   body {
     font-family: 'Segoe UI', sans-serif;
     background: var(--kr-forest);
     color: var(--kr-text);
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
   }
@@ -63,7 +66,7 @@
 
   .screen { display: none; flex: 1; }
   .screen.active { display: flex; flex-direction: column; }
-  #screen-beheer.active, #screen-artikelen.active, #screen-leden.active { display: block; }
+  #screen-beheer.active, #screen-admin.active, #screen-artikelen.active, #screen-leden.active { display: block; overflow-y: auto; }
   #screen-zelf.active, #screen-betaal.active { display: flex; }
 
   /* TAP SCREEN */
@@ -128,9 +131,23 @@
   /* PRODUCTEN */
   #screen-producten {
     background: var(--kr-cream);
-    padding: 24px;
+    padding: 24px 24px 110px;
     overflow-y: auto;
   }
+  .actie-balk {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px 20px;
+    background: linear-gradient(transparent, var(--kr-cream) 30%);
+    z-index: 50;
+  }
+  #screen-producten.active ~ .actie-balk,
+  .actie-balk.zichtbaar { display: flex; }
+  .actie-balk .product-btn { min-width: 140px; max-width: 200px; flex: 1; }
 
   .gast-info {
     background: var(--kr-forest);
@@ -188,6 +205,45 @@
     margin-bottom: 20px;
   }
 
+  .cat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    padding: 20px;
+  }
+  .cat-btn {
+    background: white;
+    border: 2.5px solid var(--kr-leem);
+    border-radius: 14px;
+    padding: 16px 12px;
+    cursor: pointer;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  .cat-btn:hover, .cat-btn:active { border-color: var(--kr-accent); background: var(--kr-sand); transform: translateY(-2px); }
+  .cat-btn .cat-emoji { font-size: 2.2rem; }
+  .cat-btn .cat-naam  { font-size: 1.15rem; font-weight: 700; color: var(--kr-forest); }
+  .cat-btn .cat-aantal { font-size: 0.8rem; color: var(--kr-muted); }
+  .cat-terug {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 12px 20px 0;
+    background: transparent;
+    border: 1.5px solid var(--kr-leem);
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 0.95rem;
+    color: var(--kr-forest);
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .cat-terug:hover { background: var(--kr-sand); }
+
   .product-btn {
     background: white;
     border: 2px solid var(--kr-leem);
@@ -205,6 +261,12 @@
 
   .product-btn:hover { border-color: var(--kr-accent); background: var(--kr-sand); transform: translateY(-2px); }
   .product-btn:active { transform: scale(0.97); }
+  @keyframes btn-flash {
+    0%   { background: var(--kr-accent); border-color: var(--kr-forest); transform: scale(1.06); }
+    60%  { background: var(--kr-sand);   border-color: var(--kr-accent); transform: scale(1.02); }
+    100% { background: white;            border-color: var(--kr-leem);   transform: scale(1); }
+  }
+  .product-btn.flash { animation: btn-flash 0.35s ease-out forwards; }
 
   .product-btn .emoji { font-size: 2rem; }
   .product-btn .pnaam { font-weight: 600; color: var(--kr-forest); font-size: 0.9rem; }
@@ -447,6 +509,15 @@
   }
   .form-veld input:focus, .form-veld textarea:focus { outline: none; border-color: var(--kr-accent); }
 
+  .icoon-kies-btn {
+    font-size: 1.4rem; padding: 4px; border: 2px solid transparent;
+    border-radius: 8px; background: none; cursor: pointer; line-height: 1;
+    transition: border-color .15s, background .15s;
+  }
+  .icoon-kies-btn:hover { background: var(--kr-sand); }
+  .icoon-kies-btn.actief { border-color: var(--kr-accent); background: var(--kr-sand); }
+  .emoji-kies-btn { padding: 4px 6px; }
+
   .opslaan-btn {
     background: var(--kr-forest);
     color: white;
@@ -607,18 +678,25 @@
   .pin-modal h2 { color: var(--kr-forest); margin-bottom: 6px; font-size: 1.2rem; }
   .pin-modal p  { color: var(--kr-muted); font-size: 0.85rem; margin-bottom: 20px; }
 
-  .pin-invoer {
+  .pin-dots {
     font-size: 1.8rem;
-    letter-spacing: 0.4em;
+    letter-spacing: 10px;
     text-align: center;
-    border: 2px solid var(--kr-leem);
-    border-radius: 10px;
-    padding: 10px;
-    width: 100%;
-    margin-bottom: 12px;
-    font-family: monospace;
+    padding: 10px 0 8px;
+    color: var(--kr-forest);
+    min-height: 50px;
+    border-bottom: 2px solid var(--kr-leem);
+    margin-bottom: 4px;
+    cursor: default;
+    transition: border-color 0.15s;
   }
-  .pin-invoer:focus { outline: none; border-color: var(--kr-accent); }
+  .pin-dots.actief { border-color: var(--kr-accent); }
+  .pin-numpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 7px;
+    margin: 12px 0 8px;
+  }
 
   .pin-fout { color: #e74c3c; font-size: 0.85rem; min-height: 20px; margin-bottom: 8px; }
 
@@ -678,6 +756,20 @@
   .plek-fout { color: #e74c3c; font-size: 0.85rem; min-height: 20px; }
   .zelf-terug { background: transparent; border: none; color: var(--kr-muted); font-size: 0.85rem; cursor: pointer; text-decoration: underline; }
 
+  .numpad-btn {
+    background: white;
+    border: 1.5px solid var(--kr-leem);
+    border-radius: 10px;
+    padding: 14px 8px;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--kr-forest);
+    cursor: pointer;
+    transition: background 0.15s;
+    width: 100%;
+  }
+  .numpad-btn:hover, .numpad-btn:active { background: var(--kr-sand); }
+
   /* Beheerder-badge in ledenlijst */
   .badge-beheer {
     font-size: 0.7rem;
@@ -692,19 +784,49 @@
   /* BETAALSCHERM */
   #screen-betaal {
     background: var(--kr-cream);
-    align-items: center;
+    flex-direction: row;
+    align-items: flex-start;
     justify-content: center;
     padding: 24px;
+    gap: 20px;
   }
 
   .betaal-card {
     background: white;
     border-radius: 16px;
     padding: 36px;
-    max-width: 440px;
-    width: 100%;
+    width: 380px;
+    flex-shrink: 0;
     text-align: center;
     box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+    align-self: flex-start;
+  }
+
+  .betaal-log-kaart {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    width: 340px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .betaal-log-kaart h3 {
+    color: var(--kr-forest);
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+  }
+  .betaal-log-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
   }
 
   .betaal-card h2 { color: var(--kr-forest); margin-bottom: 4px; }
@@ -757,23 +879,69 @@
   .betaald-btn:hover { background: #219a52; }
   .betaal-terug { background: transparent; border: none; color: var(--kr-muted); font-size: 0.85rem; cursor: pointer; text-decoration: underline; }
 
-  /* Admin-only tabs */
-  .nav-tab.admin-tab { border-color: var(--kr-leem); }
-  .nav-tab.admin-tab::before { content: '🔒 '; font-size: 0.75rem; }
-  body.ingelogd .nav-tab.admin-tab::before { content: ''; }
+  .beheer-link {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--kr-leem);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    color: var(--kr-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .beheer-link:hover { background: var(--kr-sand); color: var(--kr-forest); }
+  body.ingelogd .beheer-link { color: #fff; border-color: rgba(255,255,255,0.6); }
+
+  /* Beheer submenu */
+  .beheer-menu {
+    display: none;
+    position: absolute;
+    right: 16px;
+    top: 56px;
+    background: white;
+    border: 1px solid var(--kr-leem);
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    z-index: 200;
+    min-width: 180px;
+    overflow: hidden;
+  }
+  .beheer-menu.open { display: block; }
+  .beheer-menu button {
+    display: block;
+    width: 100%;
+    padding: 11px 16px;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--kr-forest);
+    border-bottom: 1px solid var(--kr-sand);
+  }
+  .beheer-menu button:last-child { border-bottom: none; }
+  .beheer-menu button:hover { background: var(--kr-sand); }
+  .beheer-menu .menu-slot { font-size: 0.7rem; color: var(--kr-muted); padding: 4px 16px 6px; text-transform: uppercase; letter-spacing: 0.05em; background: var(--kr-cream); }
+  .beheer-menu .menu-lock::before { content: '🔒 '; font-size: 0.7rem; }
+  body.ingelogd .beheer-menu .menu-lock::before { content: ''; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>🌿 Krösenberg — Consumpties</h1>
-  <div class="nav-tabs">
-    <button class="nav-tab active" onclick="toonScherm('tap')">Tapscherm</button>
-    <button class="nav-tab" onclick="toonScherm('zelf')">Geen bandje</button>
-    <button class="nav-tab admin-tab" onclick="vereisLogin('beheer')">Beheer</button>
-    <button class="nav-tab admin-tab" onclick="vereisLogin('artikelen')">Artikelen</button>
-    <button class="nav-tab admin-tab" onclick="vereisLogin('leden')">Leden</button>
-    <button id="uitloggen-btn" onclick="uitloggen()" style="display:none;background:transparent;border:1px solid #e74c3c;color:#e74c3c;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:0.8rem">Uitloggen</button>
+  <div class="nav-tabs" style="position:relative">
+    <button class="beheer-link" id="beheer-menu-btn" onclick="toggleBeheerMenu()">⚙ Beheer</button>
+    <div class="beheer-menu" id="beheer-menu">
+      <div class="menu-slot">Administratie</div>
+      <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('admin')">📊 Omzet &amp; log</button>
+      <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('leden')">👥 Leden</button>
+      <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('artikelen')">🛒 Artikelen</button>
+      <div class="menu-slot">Instellingen</div>
+      <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('beheer')">⚙ Instellingen</button>
+      <button id="uitloggen-btn" onclick="uitloggen();sluitBeheerMenu()" style="display:none;color:#e74c3c">Uitloggen</button>
+    </div>
   </div>
   <div style="margin-left:auto;display:flex;gap:10px;align-items:center;font-size:0.8rem">
     <span id="sync-status" style="color:#27ae60">🟢 Online</span>
@@ -789,7 +957,10 @@
         <h2 style="margin:0" id="rek-naam">—</h2>
         <div style="font-size:0.85rem;color:var(--kr-muted)" id="rek-plek">—</div>
       </div>
-      <button onclick="sluitRekening()" style="background:transparent;border:none;font-size:1.4rem;cursor:pointer;color:var(--kr-muted)">✕</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button onclick="openBewerkLid()" style="padding:6px 12px;background:var(--kr-forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.85rem">✏️ Bewerken</button>
+        <button onclick="sluitRekening()" style="background:transparent;border:none;font-size:1.4rem;cursor:pointer;color:var(--kr-muted)">✕</button>
+      </div>
     </div>
 
     <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
@@ -821,12 +992,145 @@
   </div>
 </div>
 
+<!-- BEWERK LID MODAL -->
+<div class="modal-overlay" id="bewerk-lid-modal">
+  <div class="pin-modal" style="max-width:480px;width:95%;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">✏️ Lidgegevens bewerken</h2>
+      <button onclick="sluitBewerkLid()" style="background:transparent;border:none;font-size:1.4rem;cursor:pointer;color:var(--kr-muted)">✕</button>
+    </div>
+    <input type="hidden" id="bewerk-uid">
+    <div class="form-rij">
+      <div class="form-veld">
+        <label>Naam</label>
+        <input type="text" id="bewerk-naam" placeholder="Voor- en achternaam">
+      </div>
+      <div class="form-veld">
+        <label>Pleknummer</label>
+        <input type="text" id="bewerk-plek" placeholder="bijv. HV3">
+      </div>
+    </div>
+    <div class="form-veld" style="margin-bottom:12px">
+      <label>Type</label>
+      <select id="bewerk-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('bewerk-pincode-blok').style.display=this.value==='lid'?'':'none'">
+        <option value="lid">Lid (kan ook zonder bandje bestellen)</option>
+        <option value="gast">Gast (alleen met bandje)</option>
+      </select>
+    </div>
+    <div class="form-veld" id="bewerk-pincode-blok" style="margin-bottom:12px">
+      <label>Pincode <span id="bewerk-pincode-status" style="font-weight:normal;color:var(--kr-muted)"></span></label>
+      <input type="text" id="bewerk-pincode" placeholder="Nieuwe pincode" maxlength="8" inputmode="numeric" pattern="[0-9]*" style="max-width:160px">
+    </div>
+    <div class="form-veld" style="margin-bottom:16px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="bewerk-beheerder" style="width:16px;height:16px;accent-color:var(--kr-forest)">
+        Beheerder
+      </label>
+    </div>
+    <div class="form-veld" style="margin-bottom:16px">
+      <label>NFC-bandjes</label>
+      <div id="lid-bandjes-lijst" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px">
+        <input id="bandje-voor-lid-input" placeholder="Bandje UID" style="flex:1;padding:6px 10px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:0.9rem">
+        <button onclick="voegBandjeAanLid(document.getElementById('bewerk-uid').value)" style="padding:6px 12px;background:var(--kr-forest);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem">+ Koppelen</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button onclick="sluitBewerkLid()" class="pin-annuleer">Annuleren</button>
+      <button onclick="slaLidwijzigingOp()" class="pin-ok">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<!-- GAST PINCODE MODAL -->
+<div class="modal-overlay" id="gast-pin-modal">
+  <div class="pin-modal">
+    <h2>🔒 Pincode vereist</h2>
+    <p id="gast-pin-uitleg">Voer je pincode in om te bestellen</p>
+    <div class="pin-dots actief" id="gast-pin-invoer-dots">—</div>
+    <input type="hidden" id="gast-pin-invoer" value="">
+    <div class="pin-numpad">
+      <button class="numpad-btn" onclick="pinNumpad('1')">1</button>
+      <button class="numpad-btn" onclick="pinNumpad('2')">2</button>
+      <button class="numpad-btn" onclick="pinNumpad('3')">3</button>
+      <button class="numpad-btn" onclick="pinNumpad('4')">4</button>
+      <button class="numpad-btn" onclick="pinNumpad('5')">5</button>
+      <button class="numpad-btn" onclick="pinNumpad('6')">6</button>
+      <button class="numpad-btn" onclick="pinNumpad('7')">7</button>
+      <button class="numpad-btn" onclick="pinNumpad('8')">8</button>
+      <button class="numpad-btn" onclick="pinNumpad('9')">9</button>
+      <div></div>
+      <button class="numpad-btn" onclick="pinNumpad('0')">0</button>
+      <button class="numpad-btn" onclick="pinWis()">⌫</button>
+    </div>
+    <div class="plek-fout" id="gast-pin-fout"></div>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="pin-annuleer" onclick="sluitGastPinModal()">Annuleren</button>
+      <button class="pin-ok" onclick="controleerGastPin()">Bevestigen</button>
+    </div>
+  </div>
+</div>
+
+<!-- PINCODE INSTELLEN MODAL -->
+<div class="modal-overlay" id="stel-pin-modal">
+  <div class="pin-modal">
+    <h2 id="stel-pin-titel">🔑 Pincode instellen</h2>
+    <p id="stel-pin-uitleg">Stel een pincode in zodat je zonder bandje kunt bestellen via je pleknummer.</p>
+    <div style="display:flex;gap:12px;margin-bottom:4px">
+      <div style="flex:1;text-align:center">
+        <div style="font-size:0.75rem;color:var(--kr-muted);margin-bottom:4px">Nieuwe pincode</div>
+        <div class="pin-dots actief" id="stel-pin-nieuw-dots" onclick="pinActiveer('stel-pin-nieuw')">—</div>
+        <input type="hidden" id="stel-pin-nieuw" value="">
+      </div>
+      <div style="flex:1;text-align:center">
+        <div style="font-size:0.75rem;color:var(--kr-muted);margin-bottom:4px">Herhaal</div>
+        <div class="pin-dots" id="stel-pin-herhaal-dots" onclick="pinActiveer('stel-pin-herhaal')">—</div>
+        <input type="hidden" id="stel-pin-herhaal" value="">
+      </div>
+    </div>
+    <div class="pin-numpad">
+      <button class="numpad-btn" onclick="pinNumpad('1')">1</button>
+      <button class="numpad-btn" onclick="pinNumpad('2')">2</button>
+      <button class="numpad-btn" onclick="pinNumpad('3')">3</button>
+      <button class="numpad-btn" onclick="pinNumpad('4')">4</button>
+      <button class="numpad-btn" onclick="pinNumpad('5')">5</button>
+      <button class="numpad-btn" onclick="pinNumpad('6')">6</button>
+      <button class="numpad-btn" onclick="pinNumpad('7')">7</button>
+      <button class="numpad-btn" onclick="pinNumpad('8')">8</button>
+      <button class="numpad-btn" onclick="pinNumpad('9')">9</button>
+      <div></div>
+      <button class="numpad-btn" onclick="pinNumpad('0')">0</button>
+      <button class="numpad-btn" onclick="pinWis()">⌫</button>
+    </div>
+    <div class="plek-fout" id="stel-pin-fout"></div>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="pin-annuleer" id="stel-pin-skip-btn" onclick="sluitStelPinModal()">Sla over</button>
+      <button class="pin-ok" onclick="bevestigStelPin()">Opslaan</button>
+    </div>
+  </div>
+</div>
+
 <!-- PINCODE MODAL -->
 <div class="modal-overlay" id="pin-modal">
   <div class="pin-modal">
     <h2>🔒 Beheerder inloggen</h2>
     <p>Voer de pincode in om verder te gaan</p>
-    <input type="password" class="pin-invoer" id="pin-invoer" maxlength="6" placeholder="••••" onkeydown="if(event.key==='Enter') controleerPin()">
+    <div class="pin-dots actief" id="pin-invoer-dots">—</div>
+    <input type="hidden" id="pin-invoer" value="">
+    <div class="pin-numpad">
+      <button class="numpad-btn" onclick="pinNumpad('1')">1</button>
+      <button class="numpad-btn" onclick="pinNumpad('2')">2</button>
+      <button class="numpad-btn" onclick="pinNumpad('3')">3</button>
+      <button class="numpad-btn" onclick="pinNumpad('4')">4</button>
+      <button class="numpad-btn" onclick="pinNumpad('5')">5</button>
+      <button class="numpad-btn" onclick="pinNumpad('6')">6</button>
+      <button class="numpad-btn" onclick="pinNumpad('7')">7</button>
+      <button class="numpad-btn" onclick="pinNumpad('8')">8</button>
+      <button class="numpad-btn" onclick="pinNumpad('9')">9</button>
+      <div></div>
+      <button class="numpad-btn" onclick="pinNumpad('0')">0</button>
+      <button class="numpad-btn" onclick="pinWis()">⌫</button>
+    </div>
     <div class="pin-fout" id="pin-fout"></div>
     <div class="pin-btns">
       <button class="pin-annuleer" onclick="sluitPinModal()">Annuleren</button>
@@ -835,46 +1139,81 @@
   </div>
 </div>
 
-<!-- ZELFBEDIENING (geen bandje) -->
-<div id="screen-zelf" class="screen">
-  <div class="zelf-card">
-    <div style="font-size:2.5rem;margin-bottom:16px">🏕️</div>
-    <h2>Bandje vergeten?</h2>
-    <p>Voer je pleknummer in om een bestelling te plaatsen</p>
-    <input type="text" class="plek-input" id="zelf-plek" placeholder="bijv. HV3" maxlength="6"
-      oninput="this.value=this.value.toUpperCase()"
-      onkeydown="if(event.key==='Enter') zelfSelecteer()">
-    <div class="plek-fout" id="zelf-fout"></div>
-    <button class="plek-ok-btn" onclick="zelfSelecteer()">Verder →</button>
-    <button class="zelf-terug" onclick="toonScherm('tap')">← Terug naar tapscherm</button>
+<!-- TAPSCHERM (met inline geen-bandje blok) -->
+<div id="screen-tap" class="screen active">
+  <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;align-items:flex-start;padding:24px;width:100%;box-sizing:border-box">
+
+    <!-- Bandje scannen -->
+    <div class="tap-card">
+      <div class="nfc-icon"><span>📡</span></div>
+      <h2>Houd bandje voor de lezer</h2>
+      <p>Scan je NFC-bandje om consumpties te registreren</p>
+      <p id="nfc-status" style="margin-top:16px;font-size:0.8rem;color:var(--kr-muted)">Klaar voor scan…</p>
+    </div>
+
+    <!-- Geen bandje (leden) -->
+    <div class="tap-card">
+      <div style="font-size:3rem;margin-bottom:24px">🪪</div>
+      <h2>Geen bandje</h2>
+      <p style="margin-bottom:20px">Uitsluitend voor leden</p>
+      <!-- Stap 1: alleen knop -->
+      <div id="zelf-stap1">
+        <button class="plek-ok-btn" onclick="openZelfInvoer()">Pleknummer invoeren →</button>
+      </div>
+      <!-- Stap 2: invoer (verborgen totdat de knop geklikt wordt) -->
+      <div id="zelf-stap2" style="display:none">
+        <div class="plek-input" id="zelf-plek-display" style="cursor:default;min-height:52px;display:flex;align-items:center;justify-content:center;letter-spacing:0.15em;font-size:1.6rem;margin-bottom:4px">&nbsp;</div>
+        <div class="plek-fout" id="zelf-fout"></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0">
+          <button class="numpad-btn" onclick="numpadInvoer('1')">1</button>
+          <button class="numpad-btn" onclick="numpadInvoer('2')">2</button>
+          <button class="numpad-btn" onclick="numpadInvoer('3')">3</button>
+          <button class="numpad-btn" onclick="numpadInvoer('4')">4</button>
+          <button class="numpad-btn" onclick="numpadInvoer('5')">5</button>
+          <button class="numpad-btn" onclick="numpadInvoer('6')">6</button>
+          <button class="numpad-btn" onclick="numpadInvoer('7')">7</button>
+          <button class="numpad-btn" onclick="numpadInvoer('8')">8</button>
+          <button class="numpad-btn" onclick="numpadInvoer('9')">9</button>
+          <button class="numpad-btn" onclick="numpadInvoer('GV')" style="font-size:0.85rem">GV</button>
+          <button class="numpad-btn" onclick="numpadInvoer('0')">0</button>
+          <button class="numpad-btn" onclick="numpadWis()" style="font-size:1.2rem">⌫</button>
+          <button class="numpad-btn" onclick="numpadInvoer('HV')" style="font-size:0.85rem">HV</button>
+          <button class="numpad-btn plek-ok-btn" onclick="zelfSelecteer()" style="grid-column:span 2;font-size:1rem;padding:14px">Verder →</button>
+        </div>
+        <button class="zelf-terug" onclick="sluitZelfInvoer()">← Annuleren</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
-<!-- TAPSCHERM -->
-<div id="screen-tap" class="screen active">
-  <div class="tap-card">
-    <div class="nfc-icon" onclick="simuleerScan('random')"><span>📡</span></div>
-    <h2>Houd bandje voor de lezer</h2>
-    <p>Scan je NFC-bandje om consumpties te registreren</p>
-    <div class="bandjes-demo">
-      <button class="bandje-btn" onclick="simuleerScan('A1B2')">Bandje Jan (HV3)</button>
-      <button class="bandje-btn" onclick="simuleerScan('C3D4')">Bandje Lisa (GV5)</button>
-      <button class="bandje-btn" onclick="simuleerScan('E5F6')">Bandje Piet (B7)</button>
-    </div>
-    <p style="margin-top:16px;font-size:0.8rem;color:var(--kr-muted)">Klik op een bandje om een scan te simuleren</p>
-  </div>
-</div>
+<!-- ZELFBEDIENING screen (niet meer nodig als apart scherm, maar bewaard voor compat) -->
+<div id="screen-zelf" class="screen"></div>
 
 <!-- PRODUCTEN -->
 <div id="screen-producten" class="screen">
   <div class="gast-info">
-    <div>
-      <div class="naam" id="gast-naam">—</div>
-      <div style="font-size:0.85rem;opacity:0.7" id="gast-plek">—</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="product-btn" onclick="toonScherm('tap')" style="border-color:#e74c3c;color:#e74c3c;min-width:auto;padding:8px 12px">
+        <span class="emoji">←</span>
+        <span class="pnaam">Annuleren</span>
+      </button>
+      <div>
+        <div class="naam" id="gast-naam">—</div>
+        <div style="font-size:0.85rem;opacity:0.7" id="gast-plek">—</div>
+      </div>
+      <button onclick="openStelPinModal(false)" style="border:1.5px solid rgba(255,255,255,0.4);background:rgba(255,255,255,0.15);color:white;border-radius:8px;cursor:pointer;font-size:0.8rem;padding:5px 10px;white-space:nowrap">🔑 Mijn pincode</button>
     </div>
-    <div>
-      <div class="openstaand-label">Openstaand</div>
-      <div class="openstaand-bedrag" id="gast-openstaand">€0,00</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div>
+        <div class="openstaand-label">Openstaand</div>
+        <div class="openstaand-bedrag" id="gast-openstaand">€0,00</div>
+      </div>
+      <button class="product-btn" id="afrekenen-product-btn" onclick="openBetaalscherm()" style="display:none;border-color:#c0392b;background:#fdecea;min-width:100px;padding:8px 12px">
+        <span class="emoji">💳</span>
+        <span class="pnaam">Afrekenen</span>
+        <span class="pprijs" id="afrekenen-product-bedrag" style="color:#c0392b"></span>
+      </button>
     </div>
   </div>
 
@@ -883,21 +1222,14 @@
     <div class="winkelwagen-items" id="ww-items" style="display:none"></div>
   </div>
 
-  <div class="producten-grid" id="producten-grid"></div>
+  <div id="producten-rijen"></div>
 
-  <div class="acties-rij">
-    <button class="terug-btn" onclick="toonScherm('tap')">← Annuleren</button>
-    <button class="bevestig-btn" id="bevestig-btn" disabled onclick="bevestigBestelling()">Registreer bestelling</button>
-  </div>
-
-  <div id="afrekenen-blok" style="margin-top:20px;padding:16px 18px;background:#fff8e1;border:2px solid #f4d03f;border-radius:12px;display:none">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-      <div>
-        <div style="font-weight:600;color:#7d6608;font-size:0.95rem">Gast wil afrekenen</div>
-        <div style="color:#7d6608;font-size:0.85rem">Openstaand: <span id="afrekenen-bedrag" style="font-weight:700"></span></div>
-      </div>
-      <button onclick="openBetaalscherm()" style="background:#c0392b;color:white;border:none;border-radius:8px;padding:10px 22px;cursor:pointer;font-size:0.9rem;font-weight:600">💳 Afrekenen</button>
-    </div>
+  <div class="actie-balk zichtbaar">
+    <button class="product-btn" id="bevestig-btn" disabled onclick="bevestigBestelling()" style="border-color:var(--kr-accent);background:var(--kr-sand)">
+      <span class="emoji">✓</span>
+      <span class="pnaam" id="bevestig-label">Bestelling</span>
+      <span class="pprijs" id="bevestig-prijs" style="color:var(--kr-accent)"></span>
+    </button>
   </div>
 </div>
 
@@ -931,6 +1263,11 @@
     <br>
     <button class="betaal-terug" onclick="toonScherm('producten')">← Terug</button>
   </div>
+
+  <div class="betaal-log-kaart">
+    <h3>Openstaande betalingen</h3>
+    <div class="betaal-log-scroll" id="betaal-log"></div>
+  </div>
 </div>
 
 <!-- BEVESTIGING -->
@@ -948,8 +1285,9 @@
   </div>
 </div>
 
-<!-- BEHEER -->
-<div id="screen-beheer" class="screen">
+<!-- ADMINISTRATIE -->
+<div id="screen-admin" class="screen">
+  <div style="padding:12px 16px 0"><button onclick="toonScherm('tap')" style="background:none;border:none;cursor:pointer;color:var(--kr-sand);font-size:0.9rem;padding:4px 0">← Terug</button></div>
   <div class="beheer-grid">
 
     <div class="beheer-card" style="grid-column: span 2">
@@ -980,15 +1318,69 @@
     <div class="beheer-card" style="grid-column: span 2">
       <h3>Consumptie log</h3>
       <table class="log-tabel">
-        <thead><tr><th>Tijd</th><th>Gast</th><th>Producten</th><th>Bedrag</th></tr></thead>
+        <thead><tr><th>Datum</th><th>Tijd</th><th>Gast</th><th>Producten</th><th>Bedrag</th></tr></thead>
         <tbody id="log-tbody"></tbody>
       </table>
     </div>
+
+  </div>
+</div>
+
+<!-- BEHEER -->
+<div id="screen-beheer" class="screen">
+  <div style="padding:12px 16px 0"><button onclick="toonScherm('tap')" style="background:none;border:none;cursor:pointer;color:var(--kr-sand);font-size:0.9rem;padding:4px 0">← Terug</button></div>
+  <div class="beheer-grid">
+
+    <div class="beheer-card" style="grid-column: span 2">
+      <h3>📡 Plekken &amp; Bandjes</h3>
+      <p style="font-size:0.85rem;color:var(--kr-muted);margin-bottom:12px">Maak gastenplekken aan en koppel er één of meerdere NFC-bandjes aan. Leden krijgen bandjes via hun ledenkaart.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-end">
+        <div class="form-veld" style="margin:0;min-width:100px;flex:1">
+          <label style="font-size:0.8rem">Nieuw pleknummer</label>
+          <input type="text" id="nieuw-plek-code" placeholder="bijv. GV1" style="padding:8px 10px;border:1px solid var(--kr-leem);border-radius:8px;font-size:0.9rem;width:100%" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <button onclick="voegPlekToe()" style="padding:8px 16px;background:var(--kr-forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;white-space:nowrap">+ Plek</button>
+      </div>
+      <div id="plekken-lijst"></div>
+    </div>
+
+    <div class="beheer-card">
+      <h3>🔄 Synchronisatie</h3>
+      <p style="font-size:0.85rem;color:var(--kr-muted);margin-bottom:10px">Items in de wachtrij worden automatisch naar Supabase gestuurd zodra er internet is. Als items blijven staan door een eerdere fout, kun je de wachtrij wissen — de data staat al in Supabase.</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span id="sync-wachtrij-detail" style="font-size:0.9rem"></span>
+        <button onclick="forceerSync()" style="padding:8px 14px;background:var(--kr-forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem">Nu synchroniseren</button>
+        <button onclick="wisWachtrij()" style="padding:8px 14px;background:#e74c3c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem">Wachtrij wissen</button>
+      </div>
+    </div>
+
+    <div class="beheer-card">
+      <h3>🖨️ Printer</h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="printer-url" placeholder="http://192.168.1.x:5000"
+          style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--kr-leem);border-radius:8px;font-size:0.9rem"
+          oninput="slaaPrinterUrlOp(this.value)">
+        <button onclick="testPrint()" style="padding:8px 14px;background:var(--kr-forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem">Testbon</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+        <label class="toggle-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.9rem">
+          <input type="checkbox" id="auto-print-toggle" onchange="slaanAutorintOp(this.checked)"
+            style="width:18px;height:18px;cursor:pointer">
+          Automatisch printen bij eten/ijs-bestellingen
+        </label>
+      </div>
+      <div id="printer-status" style="font-size:0.8rem;color:var(--kr-muted);margin-top:6px"></div>
+      <p style="font-size:0.78rem;color:var(--kr-muted);margin-top:8px">
+        In Fully Kiosk: <em>Web Content → Allow Mixed Content</em> aanzetten.
+      </p>
+    </div>
+
   </div>
 </div>
 
 <!-- LEDEN -->
 <div id="screen-leden" class="screen">
+  <div style="padding:12px 16px 0"><button onclick="toonScherm('tap')" style="background:none;border:none;cursor:pointer;color:var(--kr-sand);font-size:0.9rem;padding:4px 0">← Terug</button></div>
   <div class="leden-wrap">
 
     <div class="plek-zoek-blok">
@@ -1012,6 +1404,17 @@
         </div>
       </div>
       <div class="form-veld" style="margin-bottom:12px">
+        <label>Type</label>
+        <select id="lid-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('lid-pincode-blok').style.display=this.value==='lid'?'':'none'">
+          <option value="lid">Lid (kan ook zonder bandje bestellen)</option>
+          <option value="gast">Gast (alleen met bandje)</option>
+        </select>
+      </div>
+      <div class="form-veld" id="lid-pincode-blok" style="margin-bottom:12px">
+        <label>Pincode (vereist bij bestelling zonder bandje)</label>
+        <input type="text" id="lid-pincode" placeholder="bijv. 1234" maxlength="8" inputmode="numeric" pattern="[0-9]*" style="max-width:160px">
+      </div>
+      <div class="form-veld" style="margin-bottom:12px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="lid-beheerder" style="width:16px;height:16px;accent-color:var(--kr-forest)">
           Beheerder (toegang tot Beheer, Artikelen en Leden)
@@ -1030,6 +1433,7 @@
 
 <!-- ARTIKELEN -->
 <div id="screen-artikelen" class="screen">
+  <div style="padding:12px 16px 0"><button onclick="toonScherm('tap')" style="background:none;border:none;cursor:pointer;color:var(--kr-sand);font-size:0.9rem;padding:4px 0">← Terug</button></div>
   <div class="artikelen-wrap">
 
     <div class="artikel-formblok">
@@ -1046,15 +1450,53 @@
         </div>
       </div>
       <div class="form-rij">
-        <div class="form-veld">
-          <label>Emoji / icoon</label>
-          <input type="text" id="art-emoji" placeholder="🍺" maxlength="4">
+        <div class="form-veld" style="flex:2">
+          <label>Icoon</label>
+          <div id="icoon-grid" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <script>
+            (function(){
+              const afb = [
+                {src:'/icons/pils.png', naam:'pils'},
+                {src:'/icons/bier0.0.png', naam:'bier 0.0'},
+                {src:'/icons/radler.png', naam:'radler'},
+                {src:'/icons/cola.png', naam:'cola'},
+                {src:'/icons/sinas.png', naam:'sinas'},
+                {src:'/icons/ijsthee.png', naam:'ijsthee'},
+                {src:'/icons/rode_wijn.png', naam:'rode wijn'},
+                {src:'/icons/witte_wijn.png', naam:'witte wijn'},
+                {src:'/icons/rose.png', naam:'rosé'},
+                {src:'/icons/magnum.png', naam:'magnum'},
+                {src:'/icons/cornetto.png', naam:'cornetto'},
+                {src:'/icons/raket.png', naam:'raket ijsje'},
+                {src:'/icons/kroket.png', naam:'kroket'},
+                {src:'/icons/broodje_kroket.png', naam:'broodje kroket'},
+                {src:'/icons/broodje_hamburger.png', naam:'broodje hamburger'},
+                {src:'/icons/bal_gehakt.png', naam:'bal gehakt'},
+                {src:'/icons/broodje_bal_gehakt.png', naam:'broodje bal gehakt'},
+              ];
+              const emoji = ['🍺','🍻','🥃','🍸','🍹','🧃','🥤','🍋','☕','🧋','🍵','🫗','🧊','💧','🍕','🍩','🍪','🍫','🍿','🥜','🍦','🚀','🛒'];
+              document.write(afb.map(a =>
+                `<button type="button" class="icoon-kies-btn" onclick="kiesIconImg('${a.src}')" title="${a.naam}" data-waarde="${a.src}">
+                  <img src="${a.src}" style="width:44px;height:44px;object-fit:contain">
+                </button>`
+              ).join(''));
+              document.write('<div style="width:100%;height:1px;background:var(--kr-sand);margin:4px 0"></div>');
+              document.write(emoji.map(e =>
+                `<button type="button" class="icoon-kies-btn emoji-kies-btn" onclick="kiesIconEmoji('${e}')" title="${e}" data-waarde="${e}">${e}</button>`
+              ).join(''));
+            })();
+            </script>
+          </div>
+          <input type="text" id="art-emoji" placeholder="of typ zelf..." maxlength="50" style="width:160px;font-size:0.85rem">
         </div>
+      </div>
+      <div class="form-rij">
         <div class="form-veld">
           <label>Categorie</label>
           <select id="art-categorie">
             <option value="drank">Drank</option>
             <option value="eten">Eten</option>
+            <option value="ijs">Ijs</option>
             <option value="overig">Overig</option>
           </select>
         </div>
@@ -1092,8 +1534,15 @@
 <script src="db.js"></script>
 <script>
 // ── App-staat ────────────────────────────────────────────────────────────────
+// ── Reserveringen-database (re-fective.nl) ───────────────────────────────────
+const RESERVERINGEN_URL = 'https://pgiofnsoqlcabeaskfzc.supabase.co';
+const RESERVERINGEN_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBnaW9mbnNvcWxjYWJlYXNrZnpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTg2OTgsImV4cCI6MjA5Nzk3NDY5OH0.ckOlwCV_Pt7bnTceAEJf2wW4UkIxzHK13chk1KAFTQM';
+
 let gasten = {};      // uid → object (in-memory cache)
 let producten = [];   // array (in-memory cache)
+let plekkenCache = {}; // plek_code → {plek_code}
+let bandjeNaarKoppeling = {}; // bandje_uid → {koppeling_type, koppeling_id}
+let koppelingNaarBandjes = {}; // koppeling_id → [bandje_uid, ...]
 
 const STANDAARD_GASTEN = {
   'A1B2': { naam: 'Jan de Vries', plek: 'HV3', openstaand: 0, beheerder: true },
@@ -1101,16 +1550,6 @@ const STANDAARD_GASTEN = {
   'E5F6': { naam: 'Piet Bakker',  plek: 'B7',  openstaand: 0, beheerder: false },
 };
 
-const STANDAARD_PRODUCTEN = [
-  { emoji: '🍺', naam: 'Pils',      prijs: 2.50 },
-  { emoji: '🍷', naam: 'Wijn',      prijs: 3.00 },
-  { emoji: '🥤', naam: 'Frisdrank', prijs: 1.75 },
-  { emoji: '☕', naam: 'Koffie',    prijs: 1.50 },
-  { emoji: '🧃', naam: 'Sap',       prijs: 1.75 },
-  { emoji: '🍕', naam: 'Snack',     prijs: 3.50 },
-  { emoji: '🍦', naam: 'IJs',       prijs: 2.00 },
-  { emoji: '💧', naam: 'Water',     prijs: 1.00 },
-];
 
 async function init() {
   // Laad Supabase → IndexedDB (als online)
@@ -1119,6 +1558,13 @@ async function init() {
   // Laad in-memory cache vanuit IndexedDB
   const ledenArr = await DB.getLeden();
   ledenArr.forEach(l => { gasten[l.uid] = l; });
+
+  // Laad plekken
+  const plekkenArr = await DB.getPlekken();
+  plekkenArr.forEach(p => { plekkenCache[p.plek_code] = p; });
+
+  // Laad bandjes-koppelingen
+  bouwBandjesCaches(await DB.getBandjes());
 
   // Vul standaard-gasten als DB leeg is
   if (ledenArr.length === 0) {
@@ -1129,8 +1575,12 @@ async function init() {
   }
 
   producten = await DB.getProducten();
-  if (producten.length === 0) {
-    for (const p of STANDAARD_PRODUCTEN) {
+
+  // Migreer oude relatieve icon-paden (icons/...) naar absoluut (/icons/...)
+  const teUpdaten = producten.filter(p => p.emoji && p.emoji.startsWith('icons/'));
+  if (teUpdaten.length > 0) {
+    for (const p of teUpdaten) {
+      p.emoji = '/' + p.emoji;
       await DB.upsertProduct(p);
     }
     producten = await DB.getProducten();
@@ -1146,25 +1596,103 @@ let ingelogd = false;
 const PINCODE = '1234'; // demo-pincode
 let doelScherm = null;
 
+let _bevestigTimer = null;
+
+function autoSchaal() {
+  document.documentElement.style.zoom = '';
+  requestAnimationFrame(() => {
+    const contentH = document.documentElement.scrollHeight;
+    const contentW = document.documentElement.scrollWidth;
+    const viewH = window.innerHeight;
+    const viewW = window.innerWidth;
+    const zoom = Math.min(viewH / contentH, viewW / contentW);
+    if (zoom < 0.99) document.documentElement.style.zoom = zoom;
+  });
+}
+window.addEventListener('resize', autoSchaal);
+
 function toonScherm(naam) {
+  clearTimeout(_bevestigTimer);
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('screen-' + naam).classList.add('active');
-  const tabs = document.querySelectorAll('.nav-tab');
-  if (naam === 'tap')      { tabs[0].classList.add('active'); winkelwagen = {}; }
-  if (naam === 'zelf')     { tabs[1].classList.add('active'); document.getElementById('zelf-plek').value = ''; document.getElementById('zelf-fout').textContent = ''; setTimeout(() => document.getElementById('zelf-plek').focus(), 100); }
-  if (naam === 'beheer')   { tabs[2].classList.add('active'); renderBeheer(); }
-  if (naam === 'artikelen'){ tabs[3].classList.add('active'); renderArtikelLijst(); }
-  if (naam === 'leden')    { tabs[4].classList.add('active'); renderLedenGrid(); }
+  const el = document.getElementById('screen-' + naam);
+  if (el) el.classList.add('active');
+  sluitZelfInvoer();
+  if (naam === 'tap')       { winkelwagen = {}; huidigeBandje = null; if (ingelogd) { ingelogd = false; document.body.classList.remove('ingelogd'); document.getElementById('uitloggen-btn').style.display = 'none'; } }
+  if (naam === 'zelf')      { toonScherm('tap'); return; }
+  if (naam === 'admin')     { renderAdmin(); }
+  if (naam === 'beheer')    { renderBeheer(); }
+  if (naam === 'artikelen') { renderArtikelLijst(); }
+  if (naam === 'leden')     { renderLedenGrid(); }
+  if (naam === 'bevestig')  { _bevestigTimer = setTimeout(() => toonScherm('tap'), 8000); }
+  autoSchaal();
+}
+
+function toggleBeheerMenu() {
+  document.getElementById('beheer-menu').classList.toggle('open');
+}
+
+function sluitBeheerMenu() {
+  document.getElementById('beheer-menu').classList.remove('open');
+}
+
+// Sluit menu bij klik buiten
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('beheer-menu');
+  const btn = document.getElementById('beheer-menu-btn');
+  if (menu && !menu.contains(e.target) && e.target !== btn) {
+    menu.classList.remove('open');
+  }
+});
+
+// ── PIN NUMPAD ────────────────────────────────────────────────────────────────
+let _pinActief = null;
+
+function pinActiveer(id) {
+  _pinActief = id;
+  document.querySelectorAll('.pin-dots').forEach(d => d.classList.remove('actief'));
+  const dots = document.getElementById(id + '-dots');
+  if (dots) dots.classList.add('actief');
+}
+
+function _pinDotsUpdate(id) {
+  const inp = document.getElementById(id);
+  const dots = document.getElementById(id + '-dots');
+  if (inp && dots) dots.textContent = inp.value.length ? '●'.repeat(inp.value.length) : '—';
+}
+
+function pinNumpad(c) {
+  if (!_pinActief) return;
+  const inp = document.getElementById(_pinActief);
+  if (!inp || inp.value.length >= 8) return;
+  inp.value += c;
+  _pinDotsUpdate(_pinActief);
+  // stel-pin: schakel automatisch naar herhaal-veld na 4+ cijfers en enter op nieuw
+  if (_pinActief === 'stel-pin-nieuw' && inp.value.length >= 4) {
+    // gebruiker typt door; niet auto-wisselen zodat langere codes ook werken
+  }
+}
+
+function pinWis() {
+  if (!_pinActief) return;
+  const inp = document.getElementById(_pinActief);
+  if (!inp) return;
+  inp.value = inp.value.slice(0, -1);
+  _pinDotsUpdate(_pinActief);
+}
+
+function _pinReset(id) {
+  const inp = document.getElementById(id);
+  if (inp) inp.value = '';
+  _pinDotsUpdate(id);
 }
 
 function vereisLogin(scherm) {
   if (ingelogd) { toonScherm(scherm); return; }
   doelScherm = scherm;
-  document.getElementById('pin-invoer').value = '';
+  _pinReset('pin-invoer');
   document.getElementById('pin-fout').textContent = '';
+  pinActiveer('pin-invoer');
   document.getElementById('pin-modal').classList.add('open');
-  setTimeout(() => document.getElementById('pin-invoer').focus(), 100);
 }
 
 function controleerPin() {
@@ -1178,8 +1706,7 @@ function controleerPin() {
     toonScherm(doelScherm);
   } else {
     document.getElementById('pin-fout').textContent = 'Verkeerde pincode, probeer opnieuw';
-    document.getElementById('pin-invoer').value = '';
-    document.getElementById('pin-invoer').focus();
+    _pinReset('pin-invoer');
   }
 }
 
@@ -1194,6 +1721,7 @@ async function toonRekening(uid) {
   const totaalGeconsumeerd = lidLog.reduce((s, r) => s + Number(r.totaal), 0);
 
   document.getElementById('rek-naam').textContent = g.naam;
+  document.getElementById('rek-naam').dataset.uid = uid;
   document.getElementById('rek-plek').textContent = 'Plek ' + g.plek;
   document.getElementById('rek-openstaand').textContent = '€' + Number(g.openstaand||0).toFixed(2).replace('.', ',');
   document.getElementById('rek-betaald').textContent    = '€' + totaalBetaald.toFixed(2).replace('.', ',');
@@ -1231,6 +1759,57 @@ function sluitRekening() {
   document.getElementById('rekening-modal').classList.remove('open');
 }
 
+let bewerkUid = null;
+
+function openBewerkLid() {
+  const uid = document.getElementById('rek-naam').dataset.uid;
+  const g = gasten[uid];
+  if (!g) return;
+  bewerkUid = uid;
+  document.getElementById('bewerk-uid').value = uid;
+  document.getElementById('bewerk-naam').value = g.naam;
+  document.getElementById('bewerk-plek').value = g.plek;
+  document.getElementById('bewerk-type').value = g.type || 'lid';
+  document.getElementById('bewerk-pincode-blok').style.display = (g.type === 'gast') ? 'none' : '';
+  document.getElementById('bewerk-pincode').value = '';
+  document.getElementById('bewerk-pincode-status').textContent = g.pincode ? '(ingesteld — leeg laten om te bewaren)' : '(nog niet ingesteld)';
+  document.getElementById('bewerk-beheerder').checked = !!g.beheerder;
+  renderBandjesInLidModal(uid);
+  document.getElementById('bewerk-lid-modal').classList.add('open');
+}
+
+function sluitBewerkLid() {
+  document.getElementById('bewerk-lid-modal').classList.remove('open');
+}
+
+async function slaLidwijzigingOp() {
+  const uid = bewerkUid;
+  const naam = document.getElementById('bewerk-naam').value.trim();
+  const plek = document.getElementById('bewerk-plek').value.trim().toUpperCase();
+  const type = document.getElementById('bewerk-type').value;
+  const nieuwePincode = document.getElementById('bewerk-pincode').value.trim();
+  const beheerder = document.getElementById('bewerk-beheerder').checked;
+  if (!naam || !plek) { toonToast('⚠️ Vul naam en pleknummer in'); return; }
+  const g = gasten[uid];
+  g.naam = naam;
+  g.plek = plek;
+  g.type = type;
+  g.beheerder = beheerder;
+  if (type === 'gast') g.pincode = null;
+  else if (nieuwePincode) g.pincode = nieuwePincode;
+  await DB.upsertLid(g);
+  if (isOnline) {
+    const { error } = await supa.from('leden').upsert(g);
+    if (error) { toonToast('⚠️ Opslaan naar server mislukt: ' + error.message); return; }
+  }
+  sluitBewerkLid();
+  toonToast(`✓ ${naam} bijgewerkt`);
+  renderLedenGrid();
+  // Rekening-header bijwerken
+  document.getElementById('rek-naam').textContent = naam;
+  document.getElementById('rek-plek').textContent = 'Plek ' + plek;
+}
+
 function sluitPinModal() {
   document.getElementById('pin-modal').classList.remove('open');
 }
@@ -1243,66 +1822,288 @@ function uitloggen() {
   toonToast('Uitgelogd');
 }
 
+let gastPinUid = null;
+
+let _zelfPlek = '';
+
+function numpadInvoer(teken) {
+  if (_zelfPlek.length >= 6) return;
+  _zelfPlek += teken;
+  document.getElementById('zelf-plek-display').textContent = _zelfPlek || ' ';
+  document.getElementById('zelf-fout').textContent = '';
+}
+
+function numpadWis() {
+  _zelfPlek = _zelfPlek.slice(0, -1);
+  document.getElementById('zelf-plek-display').textContent = _zelfPlek || ' ';
+  document.getElementById('zelf-fout').textContent = '';
+}
+
+function openZelfInvoer() {
+  _zelfPlek = '';
+  document.getElementById('zelf-plek-display').textContent = ' ';
+  document.getElementById('zelf-fout').textContent = '';
+  document.getElementById('zelf-stap1').style.display = 'none';
+  document.getElementById('zelf-stap2').style.display = '';
+}
+
+function sluitZelfInvoer() {
+  _zelfPlek = '';
+  const stap2 = document.getElementById('zelf-stap2');
+  const stap1 = document.getElementById('zelf-stap1');
+  if (stap2) stap2.style.display = 'none';
+  if (stap1) stap1.style.display = '';
+}
+
 function zelfSelecteer() {
-  const plek = document.getElementById('zelf-plek').value.trim().toUpperCase();
+  const plek = _zelfPlek.trim().toUpperCase();
   const gevonden = Object.entries(gasten).find(([, g]) => g.plek.toUpperCase() === plek);
   if (!gevonden) {
     document.getElementById('zelf-fout').textContent = `Pleknummer "${plek}" niet gevonden`;
     return;
   }
-  selecteerLid(gevonden[0]);
+  const [uid, gast] = gevonden;
+  if (gast.type === 'gast') {
+    document.getElementById('zelf-fout').textContent = 'Gasten kunnen alleen met een NFC-bandje bestellen';
+    return;
+  }
+  if (!gast.pincode) {
+    selecteerLid(uid);
+    return;
+  }
+  gastPinUid = uid;
+  document.getElementById('gast-pin-uitleg').textContent = `Voer de pincode in voor plek ${gast.plek} (${gast.naam})`;
+  _pinReset('gast-pin-invoer');
+  document.getElementById('gast-pin-fout').textContent = '';
+  pinActiveer('gast-pin-invoer');
+  document.getElementById('gast-pin-modal').classList.add('open');
 }
 
-function simuleerScan(uid) {
-  if (uid === 'random') {
-    const keys = Object.keys(gasten);
-    uid = keys[Math.floor(Math.random() * keys.length)];
-  }
+function controleerGastPin() {
+  const invoer = document.getElementById('gast-pin-invoer').value.trim();
+  const uid = gastPinUid;
   const gast = gasten[uid];
-  if (!gast) return;
-  huidigeBandje = uid;
-  winkelwagen = {};
+  if (invoer === String(gast.pincode).trim()) {
+    sluitGastPinModal();
+    selecteerLid(uid);
+  } else {
+    document.getElementById('gast-pin-fout').textContent = 'Verkeerde pincode, probeer opnieuw';
+    _pinReset('gast-pin-invoer');
+  }
+}
 
+function sluitGastPinModal() {
+  document.getElementById('gast-pin-modal').classList.remove('open');
+  gastPinUid = null;
+}
+
+function openStelPinModal(verplicht) {
+  const gast = gasten[huidigeBandje];
+  const heeftPin = !!gast?.pincode;
+  document.getElementById('stel-pin-titel').textContent = heeftPin ? '🔑 Pincode wijzigen' : '🔑 Pincode instellen';
+  document.getElementById('stel-pin-uitleg').textContent = heeftPin
+    ? 'Voer een nieuwe pincode in.'
+    : 'Stel een pincode in zodat je zonder bandje kunt bestellen via je pleknummer.';
+  document.getElementById('stel-pin-skip-btn').style.display = verplicht ? 'none' : '';
+  _pinReset('stel-pin-nieuw');
+  _pinReset('stel-pin-herhaal');
+  document.getElementById('stel-pin-fout').textContent = '';
+  pinActiveer('stel-pin-nieuw');
+  document.getElementById('stel-pin-modal').classList.add('open');
+}
+
+function sluitStelPinModal() {
+  document.getElementById('stel-pin-modal').classList.remove('open');
+}
+
+async function bevestigStelPin() {
+  const nieuw = document.getElementById('stel-pin-nieuw').value;
+  const herhaal = document.getElementById('stel-pin-herhaal').value;
+  if (!nieuw) { document.getElementById('stel-pin-fout').textContent = 'Voer een pincode in'; return; }
+  if (nieuw !== herhaal) { document.getElementById('stel-pin-fout').textContent = 'Pincodes komen niet overeen'; _pinReset('stel-pin-herhaal'); pinActiveer('stel-pin-herhaal'); return; }
+  const gast = gasten[huidigeBandje];
+  gast.pincode = nieuw.trim();
+  await DB.upsertLid(gast);
+  if (isOnline) {
+    const { error } = await supa.from('leden').upsert(gast);
+    if (error) { document.getElementById('stel-pin-fout').textContent = 'Opslaan mislukt: ' + error.message; return; }
+  }
+  sluitStelPinModal();
+  toonToast('✓ Pincode opgeslagen');
+}
+
+// Hoofdingang voor NFC-scan — werkt met bandje-uid (fysiek) of lid-uid (demo)
+function bouwBandjesCaches(bandjesArr) {
+  bandjeNaarKoppeling = {};
+  koppelingNaarBandjes = {};
+  bandjesArr.forEach(b => {
+    bandjeNaarKoppeling[b.bandje_uid] = { koppeling_type: b.koppeling_type, koppeling_id: b.koppeling_id };
+    if (!koppelingNaarBandjes[b.koppeling_id]) koppelingNaarBandjes[b.koppeling_id] = [];
+    koppelingNaarBandjes[b.koppeling_id].push(b.bandje_uid);
+  });
+}
+
+async function scanBandje(bandje_uid) {
+  if (bandje_uid === 'random') {
+    const keys = Object.keys(gasten);
+    bandje_uid = keys[Math.floor(Math.random() * keys.length)];
+  }
+
+  // Zoek in bandjes-koppelingstabel
+  const koppeling = bandjeNaarKoppeling[bandje_uid];
+  if (koppeling) {
+    if (koppeling.koppeling_type === 'plek') {
+      const plek_code = koppeling.koppeling_id;
+      const lid_uid = 'PLEK-' + plek_code;
+      if (!gasten[lid_uid]) {
+        const entry = { uid: lid_uid, naam: '…', plek: plek_code, openstaand: 0, type: 'gast', beheerder: false, pincode: null };
+        gasten[lid_uid] = entry;
+        await DB.upsertLid(entry);
+      }
+      huidigeBandje = lid_uid;
+      winkelwagen = {}; _actiefCategorie = null;
+      const gast = gasten[lid_uid];
+      document.getElementById('gast-naam').textContent = gast.naam;
+      document.getElementById('gast-plek').textContent = 'Plek ' + plek_code;
+      updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
+      geluidScan();
+      toonScherm('producten');
+      haalGastNaamOp(plek_code, lid_uid);
+      return;
+    }
+    if (koppeling.koppeling_type === 'lid') {
+      const lid_uid = koppeling.koppeling_id;
+      const gast = gasten[lid_uid];
+      if (!gast) { toonToast('⚠️ Lid niet gevonden'); return; }
+      huidigeBandje = lid_uid;
+      winkelwagen = {}; _actiefCategorie = null;
+      document.getElementById('gast-naam').textContent = gast.naam;
+      document.getElementById('gast-plek').textContent = 'Plek ' + gast.plek;
+      updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
+      geluidScan();
+      toonScherm('producten');
+      if (!gast.pincode) openStelPinModal(false);
+      return;
+    }
+  }
+
+  // Fallback: directe uid-match (bestaande leden waarvan uid = bandje uid)
+  const gast = gasten[bandje_uid];
+  if (!gast) { toonToast('⚠️ Onbekend bandje — koppel het eerst aan een plek of lid'); return; }
+  huidigeBandje = bandje_uid;
+  winkelwagen = {};
   document.getElementById('gast-naam').textContent = gast.naam;
   document.getElementById('gast-plek').textContent = 'Plek ' + gast.plek;
-  updateOpenstaand();
-  renderProducten();
-  renderWinkelwagen();
-  updateAfrekenenBlok();
+  updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
+  geluidScan();
   toonScherm('producten');
+  if (!gast.pincode) openStelPinModal(false);
 }
+
+// Achtergrond: haal huidige gastnaam op uit reserveringen-DB
+async function haalGastNaamOp(plek_code, lid_uid) {
+  const vandaag = new Date().toISOString().slice(0, 10);
+  try {
+    const res = await fetch(
+      `${RESERVERINGEN_URL}/rest/v1/boeking?select=gast(naam),plek!inner(code)&plek.code=eq.${encodeURIComponent(plek_code)}&aankomst=lte.${vandaag}&vertrek=gt.${vandaag}&status=eq.bevestigd&limit=1`,
+      { headers: { apikey: RESERVERINGEN_KEY, Authorization: 'Bearer ' + RESERVERINGEN_KEY } }
+    );
+    const data = await res.json();
+    const naam = data[0]?.gast?.naam || '(geen boeking)';
+    if (gasten[lid_uid]) {
+      gasten[lid_uid].naam = naam;
+      if (huidigeBandje === lid_uid) {
+        document.getElementById('gast-naam').textContent = naam;
+      }
+      await db.leden.put(gasten[lid_uid]); // Lokaal cachen, geen Supabase-sync nodig
+    }
+  } catch (e) {
+    console.warn('Reserveringen ophalen mislukt:', e);
+  }
+}
+
+// Backward-compat alias (demo-knoppen en intern gebruik)
+function simuleerScan(uid) { scanBandje(uid); }
 
 function updateOpenstaand() {
   const gast = gasten[huidigeBandje];
   document.getElementById('gast-openstaand').textContent = '€' + gast.openstaand.toFixed(2).replace('.', ',');
 }
 
+function productKnopHTML(p) {
+  const inWagen = winkelwagen[p.naam]?.aantal || 0;
+  const heeftVoorraad = p.voorraad !== null && p.voorraad !== undefined;
+  const beschikbaar = heeftVoorraad ? p.voorraad - inWagen : Infinity;
+  const uitverkocht = beschikbaar <= 0;
+  const laag = heeftVoorraad && !uitverkocht && p.voorraad <= (p.laag_waarschuwing || 0);
+  const id = p.naam.replace(/\s/g, '');
+  return `<button class="product-btn" data-productnaam="${p.naam}" ${uitverkocht ? 'disabled' : ''} onclick="voegToe('${p.naam}', ${p.prijs})"
+    style="${uitverkocht ? 'opacity:0.45;cursor:not-allowed' : ''}">
+    ${p.emoji?.startsWith('/icons/') ? `<img src="${p.emoji}" style="width:2.2rem;height:2.2rem;object-fit:contain">` : `<span class="emoji">${p.emoji || '🛒'}</span>`}
+    <span class="pnaam">${p.naam}</span>
+    <span class="pprijs">€${Number(p.prijs).toFixed(2).replace('.', ',')}</span>
+    ${heeftVoorraad ? `<span style="font-size:0.75rem;color:${uitverkocht ? '#e74c3c' : laag ? '#e67e22' : 'var(--kr-muted)'}">
+      ${uitverkocht ? 'Uitverkocht' : `Nog ${beschikbaar}`}</span>` : ''}
+    <span class="badge ${inWagen > 0 ? 'zichtbaar' : ''}" id="badge-${id}">${inWagen}</span>
+  </button>`;
+}
+
+const CATEGORIE_LABELS = { drank: 'Drank', eten: 'Eten', ijs: 'Ijs', overig: 'Overig' };
+
+const CATEGORIE_EMOJIS = { drank: '🍺', eten: '🍔', ijs: '🍦', overig: '📦' };
+
+let _actiefCategorie = null;
+
+function kiesCategorie(cat) {
+  _actiefCategorie = cat;
+  renderProducten();
+}
+
+function terugnaarCategorieen() {
+  _actiefCategorie = null;
+  renderProducten();
+}
+
 function renderProducten() {
-  const grid = document.getElementById('producten-grid');
-  grid.innerHTML = producten.filter(p => p.actief !== false).map(p => {
-    const inWagen = winkelwagen[p.naam]?.aantal || 0;
-    const heeftVoorraad = p.voorraad !== null && p.voorraad !== undefined && p.voorraad !== '';
-    const beschikbaar = heeftVoorraad ? p.voorraad - inWagen : Infinity;
-    const uitverkocht = beschikbaar <= 0;
-    const laag = heeftVoorraad && !uitverkocht && p.voorraad <= (p.laagWaarschuwing || 0);
-    const id = p.naam.replace(/\s/g, '');
-    return `<button class="product-btn" ${uitverkocht ? 'disabled' : ''} onclick="voegToe('${p.naam}', ${p.prijs})"
-      style="${uitverkocht ? 'opacity:0.45;cursor:not-allowed' : ''}">
-      <span class="emoji">${p.emoji}</span>
-      <span class="pnaam">${p.naam}</span>
-      <span class="pprijs">€${p.prijs.toFixed(2).replace('.', ',')}</span>
-      ${heeftVoorraad ? `<span style="font-size:0.75rem;color:${uitverkocht ? '#e74c3c' : laag ? '#e67e22' : 'var(--kr-muted)'}">
-        ${uitverkocht ? 'Uitverkocht' : `Nog ${beschikbaar}`}</span>` : ''}
-      <span class="badge ${inWagen > 0 ? 'zichtbaar' : ''}" id="badge-${id}">${inWagen}</span>
-    </button>`;
-  }).join('');
+  const actief = producten.filter(p => p.actief !== false).sort((a,b) => (a.volgorde||0) - (b.volgorde||0));
+  const groepen = {};
+  actief.forEach(p => {
+    const cat = p.categorie || 'overig';
+    if (!groepen[cat]) groepen[cat] = [];
+    groepen[cat].push(p);
+  });
+  const volgorde = ['drank', 'ijs', 'eten', 'overig'];
+  const alleCategorieen = [...volgorde, ...Object.keys(groepen).filter(k => !volgorde.includes(k))].filter(c => groepen[c]?.length);
+
+  if (!_actiefCategorie || !groepen[_actiefCategorie]) {
+    // Categorie-kiezer
+    document.getElementById('producten-rijen').innerHTML =
+      `<div class="cat-grid">${alleCategorieen.map(cat => `
+        <button class="cat-btn" onclick="kiesCategorie('${cat}')">
+          <span class="cat-emoji">${CATEGORIE_EMOJIS[cat] || '📦'}</span>
+          <span class="cat-naam">${CATEGORIE_LABELS[cat] || cat}</span>
+          <span class="cat-aantal">${groepen[cat].length} artikel${groepen[cat].length !== 1 ? 'en' : ''}</span>
+        </button>`).join('')}
+      </div>`;
+  } else {
+    // Producten van geselecteerde categorie
+    document.getElementById('producten-rijen').innerHTML =
+      `<button class="cat-terug" onclick="terugnaarCategorieen()">← Categorieën</button>
+       <div style="padding:16px 20px">
+         <div style="font-size:0.8rem;color:var(--kr-muted);font-weight:600;margin-bottom:10px">${CATEGORIE_EMOJIS[_actiefCategorie] || ''} ${CATEGORIE_LABELS[_actiefCategorie] || _actiefCategorie}</div>
+         <div class="producten-grid">${groepen[_actiefCategorie].map(productKnopHTML).join('')}</div>
+       </div>`;
+  }
 }
 
 function voegToe(naam, prijs) {
   if (!winkelwagen[naam]) winkelwagen[naam] = { prijs, aantal: 0 };
   winkelwagen[naam].aantal++;
+  geluidArtikel();
   renderWinkelwagen();
-  renderProducten(); // herrender voor bijwerken "Nog X" teller
+  renderProducten();
+  const btn = document.querySelector(`.product-btn[data-productnaam="${naam}"]`);
+  if (btn) { btn.classList.add('flash'); btn.addEventListener('animationend', () => btn.classList.remove('flash'), { once: true }); }
 }
 
 function renderWinkelwagen() {
@@ -1319,9 +2120,8 @@ function renderWinkelwagen() {
 
   const btn = document.getElementById('bevestig-btn');
   btn.disabled = items.length === 0;
-  btn.textContent = items.length === 0
-    ? 'Registreer bestelling'
-    : `Registreer — €${totaal.toFixed(2).replace('.', ',')}`;
+  document.getElementById('bevestig-label').textContent = items.length === 0 ? 'Bestelling' : 'Registreer';
+  document.getElementById('bevestig-prijs').textContent = items.length > 0 ? `€${totaal.toFixed(2).replace('.', ',')}` : '';
 }
 
 async function bevestigBestelling() {
@@ -1330,19 +2130,6 @@ async function bevestigBestelling() {
   const totaal = items.reduce((s,[,v]) => s + v.prijs * v.aantal, 0);
 
   gast.openstaand = Math.round((gast.openstaand + totaal) * 100) / 100;
-  await DB.upsertLid(gast);
-
-  // Voorraad aftrekken
-  for (const [naam, v] of items) {
-    const p = producten.find(x => x.naam === naam);
-    if (p && p.voorraad !== null && p.voorraad !== undefined && p.voorraad !== '') {
-      p.voorraad = Math.max(0, p.voorraad - v.aantal);
-      await DB.upsertProduct(p);
-    }
-  }
-
-  const omschrijving = items.map(([naam, v]) => `${v.aantal}× ${naam}`).join(', ');
-  await DB.voegLogToe({ lid_uid: gast.uid, naam: gast.naam, omschrijving, items, totaal });
 
   document.getElementById('bevestig-regels').innerHTML = items.map(([naam, v]) =>
     `<div class="bevestig-regel"><span>${v.aantal}× ${naam}</span><span>€${(v.prijs * v.aantal).toFixed(2).replace('.', ',')}</span></div>`
@@ -1351,29 +2138,106 @@ async function bevestigBestelling() {
   document.getElementById('bevestig-openstaand').textContent =
     `Totaal openstaand voor ${gast.naam}: €${gast.openstaand.toFixed(2).replace('.', ',')}`;
 
+  geluidBevestigd();
+  _actiefCategorie = null;
   toonScherm('bevestig');
+
+  // Automatisch bon printen als bestelling eten of ijs bevat
+  const printCategorieen = ['eten'];
+  const heeftEten = items.some(([naam]) => {
+    const p = producten.find(x => x.naam === naam);
+    return p && printCategorieen.includes(p.categorie);
+  });
+  if (heeftEten && getAutoPrint()) printBon({ naam: gast.naam, plek: gast.plek, items, totaal });
+
+  // Opslaan/syncen op de achtergrond — blokkeert het bevestigingsscherm niet
+  (async () => {
+    await DB.upsertLid(gast);
+
+    for (const [naam, v] of items) {
+      const p = producten.find(x => x.naam === naam);
+      if (p && p.voorraad !== null && p.voorraad !== undefined && p.voorraad !== '') {
+        p.voorraad = Math.max(0, p.voorraad - v.aantal);
+        await DB.upsertProduct(p);
+      }
+    }
+
+    const omschrijving = items.map(([naam, v]) => `${v.aantal}× ${naam}`).join(', ');
+    await DB.voegLogToe({ lid_uid: gast.uid, naam: gast.naam, omschrijving, items, totaal });
+  })();
 }
 
-async function renderBeheer() {
+// ── Printer ──────────────────────────────────────────────────────────────────
+function getPrinterUrl() {
+  return localStorage.getItem('printer_url') || '';
+}
+
+function slaaPrinterUrlOp(url) {
+  localStorage.setItem('printer_url', url.trim());
+}
+
+function slaanAutorintOp(aan) {
+  localStorage.setItem('auto_print', aan ? '1' : '0');
+}
+
+function getAutoPrint() {
+  return localStorage.getItem('auto_print') === '1';
+}
+
+async function printBon(data) {
+  const url = getPrinterUrl();
+  if (!url) return;
+  try {
+    const r = await fetch(url + '/print', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const res = await r.json();
+    if (!res.ok) toonToast('⚠️ Printfout: ' + res.fout);
+  } catch { toonToast('⚠️ Printer niet bereikbaar'); }
+}
+
+async function testPrint() {
+  const url = getPrinterUrl();
+  if (!url) { toonToast('⚠️ Vul eerst het IP-adres van de printer in'); return; }
+  const statusEl = document.getElementById('printer-status');
+  statusEl.textContent = 'Testbon versturen…';
+  try {
+    const r = await fetch(url + '/testprint', { method: 'POST' });
+    const res = await r.json();
+    statusEl.textContent = res.ok ? '✓ Testbon geprint' : '✗ Fout: ' + res.fout;
+  } catch {
+    statusEl.textContent = '✗ Printer niet bereikbaar op ' + url;
+  }
+}
+
+async function renderAdmin() {
   const log        = await DB.getLog();
   const betalingen = await DB.getBetalingen();
 
   const totalOpenstaand = Object.values(gasten).reduce((s, g) => s + (g.openstaand || 0), 0);
   document.getElementById('totaal-openstaand').textContent = '€' + totalOpenstaand.toFixed(2).replace('.', ',');
 
-  document.getElementById('leden-lijst').innerHTML = Object.entries(gasten).map(([uid, g]) => `
+  const uidMetVerbruik = new Set(log.map(r => r.lid_uid));
+  document.getElementById('leden-lijst').innerHTML = Object.entries(gasten).map(([uid, g]) => {
+    const open = g.openstaand || 0;
+    const heeftVerbruik = uidMetVerbruik.has(uid);
+    const statusKlasse = open > 0 ? 'lid-openstaand' : 'lid-nul';
+    const statusTekst = open > 0
+      ? '⚠️ €' + Number(open).toFixed(2).replace('.', ',') + ' open'
+      : heeftVerbruik ? '✓ Afgerekend' : '—';
+    return `
     <div class="lid-row" style="cursor:pointer" onclick="toonRekening('${uid}')">
       <div style="flex:1">
         <div class="lid-naam">${g.naam}</div>
         <div class="lid-plek">Plek ${g.plek}</div>
       </div>
-      <span class="${(g.openstaand||0) > 0 ? 'lid-openstaand' : 'lid-nul'}" style="margin-right:8px">
-        ${(g.openstaand||0) > 0 ? '⚠️ €' + Number(g.openstaand).toFixed(2).replace('.', ',') + ' open' : '✓ Afgerekend'}
-      </span>
-      <button class="afrekenen-btn" ${!(g.openstaand||0) ? 'disabled' : ''} onclick="event.stopPropagation();afrekenen('${uid}')">Afrekenen</button>
+      <span class="${statusKlasse}" style="margin-right:8px">${statusTekst}</span>
+      <button class="afrekenen-btn" ${!open ? 'disabled' : ''} onclick="event.stopPropagation();afrekenen('${uid}')">Afrekenen</button>
       <span style="color:var(--kr-muted);margin-left:8px;font-size:0.9rem">›</span>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
   const totaalOmzet = log.reduce((s, r) => s + Number(r.totaal), 0);
   const perProduct = {};
@@ -1406,29 +2270,97 @@ async function renderBeheer() {
     : log.map(r => {
         const d = new Date(r.geregistreerd_op);
         return `<tr>
+          <td>${d.toLocaleDateString('nl-NL')}</td>
           <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
-          <td>${r.naam}</td>
+          <td>${r.naam || gasten[r.lid_uid]?.naam || '?'}</td>
           <td>${r.omschrijving}</td>
           <td>€${Number(r.totaal).toFixed(2).replace('.', ',')}</td>
         </tr>`;
       }).join('');
 }
 
-function updateAfrekenenBlok() {
-  const gast = gasten[huidigeBandje];
-  const blok = document.getElementById('afrekenen-blok');
-  blok.style.display = gast.openstaand > 0 ? '' : 'none';
-  document.getElementById('afrekenen-bedrag').textContent = '€' + gast.openstaand.toFixed(2).replace('.', ',');
+async function renderBeheer() {
+  renderPlekkenLijst();
+  const printerInput = document.getElementById('printer-url');
+  if (printerInput) printerInput.value = getPrinterUrl();
+  const autoPrintToggle = document.getElementById('auto-print-toggle');
+  if (autoPrintToggle) autoPrintToggle.checked = getAutoPrint();
+  await updateSyncBadge();
 }
 
-function openBetaalscherm() {
+function updateAfrekenenBlok() {
+  const gast = gasten[huidigeBandje];
+  const btn = document.getElementById('afrekenen-product-btn');
+  btn.style.display = gast.openstaand > 0 ? '' : 'none';
+  document.getElementById('afrekenen-product-bedrag').textContent = '€' + Number(gast.openstaand).toFixed(2).replace('.', ',');
+}
+
+async function openBetaalscherm() {
   const gast = gasten[huidigeBandje];
   document.getElementById('betaal-naam').textContent = gast.naam + ' · Plek ' + gast.plek;
-  document.getElementById('betaal-bedrag').textContent = '€' + gast.openstaand.toFixed(2).replace('.', ',');
+  // Bedrag wordt na het laden van openLog opnieuw gezet vanuit het log
   document.getElementById('contant-blok').classList.remove('zichtbaar');
   document.getElementById('qr-blok').classList.remove('zichtbaar');
   document.getElementById('betaald-btn').style.display = 'none';
   document.querySelectorAll('.betaal-optie').forEach(b => b.classList.remove('actief'));
+
+  // Consumptieoverzicht: haal log direct van Supabase voor volledigheid
+  let openLog = [];
+  try {
+    const laasteBetaling = (await DB.getBetalingen())
+      .filter(b => b.lid_uid === huidigeBandje).map(b => b.betaald_op).sort().pop() || '';
+
+    let logRijen = [];
+    if (isOnline) {
+      let q = supa.from('consumptie_log').select('*, consumptie_regels(*)').eq('lid_uid', huidigeBandje).order('geregistreerd_op', { ascending: false });
+      if (laasteBetaling) q = q.gt('geregistreerd_op', laasteBetaling);
+      const { data } = await q;
+      logRijen = (data || []).map(r => ({
+        ...r,
+        omschrijving: r.omschrijving || (r.consumptie_regels || []).map(x => `${x.aantal}× ${x.product_naam}`).join(', '),
+      }));
+    } else {
+      const alleLog = await DB.getLog();
+      logRijen = alleLog.filter(r => r.lid_uid === huidigeBandje && r.geregistreerd_op > laasteBetaling);
+    }
+    openLog = logRijen;
+  } catch { openLog = []; }
+
+  // Bereken bedrag vanuit log (betrouwbaarder dan openstaand-veld)
+  const berekendBedrag = openLog.reduce((s, r) => s + Number(r.totaal), 0);
+  document.getElementById('betaal-bedrag').textContent = '€' + berekendBedrag.toFixed(2).replace('.', ',');
+
+  // Herstel openstaand als het afwijkt
+  if (Math.abs(berekendBedrag - Number(gast.openstaand)) > 0.01) {
+    gast.openstaand = berekendBedrag;
+    await DB.upsertLid(gast);
+    updateAfrekenenBlok();
+  }
+
+  const logEl = document.getElementById('betaal-log');
+  if (openLog.length === 0) {
+    logEl.innerHTML = '<div style="color:var(--kr-muted);font-size:0.85rem;font-style:italic;padding:8px 0">Geen openstaande betalingen</div>';
+  } else {
+    logEl.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+        <thead><tr>
+          <th style="text-align:left;color:var(--kr-muted);padding:4px 6px;border-bottom:1px solid var(--kr-sand);font-weight:600">Datum/tijd</th>
+          <th style="text-align:left;color:var(--kr-muted);padding:4px 6px;border-bottom:1px solid var(--kr-sand);font-weight:600">Artikelen</th>
+          <th style="text-align:right;color:var(--kr-muted);padding:4px 6px;border-bottom:1px solid var(--kr-sand);font-weight:600">Bedrag</th>
+        </tr></thead>
+        <tbody>${openLog.map(r => {
+          const d = new Date(r.geregistreerd_op);
+          const tijd = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + ' ' +
+                       d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+          return `<tr>
+            <td style="padding:5px 6px;border-bottom:1px solid #f0ede6;white-space:nowrap;color:var(--kr-muted);font-size:0.78rem">${tijd}</td>
+            <td style="padding:5px 6px;border-bottom:1px solid #f0ede6">${r.omschrijving}</td>
+            <td style="padding:5px 6px;border-bottom:1px solid #f0ede6;text-align:right;font-weight:600;color:var(--kr-accent);white-space:nowrap">€${Number(r.totaal).toFixed(2).replace('.', ',')}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  }
+
   toonScherm('betaal');
 }
 
@@ -1479,12 +2411,36 @@ function bevestigBetaling() {
 
 async function gastRekentAf(wijze = 'contant') {
   const gast = gasten[huidigeBandje];
-  await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: gast.openstaand, wijze });
-  toonToast(`✓ ${gast.naam} afgerekend — €${gast.openstaand.toFixed(2).replace('.', ',')}`);
+  const betaaldBedrag = Number(document.getElementById('betaal-bedrag').textContent.replace('€','').replace(',','.')) || gast.openstaand;
+
+  // Verzamel openstaande bestellingen voor de bon
+  const openLog = Array.from(document.querySelectorAll('#betaal-log tbody tr')).map(tr => {
+    const cellen = tr.querySelectorAll('td');
+    return { tijd: cellen[0]?.textContent?.trim(), omschrijving: cellen[1]?.textContent?.trim(), totaal: parseFloat(cellen[2]?.textContent?.replace('€','').replace(',','.')) };
+  }).filter(r => r.omschrijving);
+
+  await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: betaaldBedrag, wijze });
+  toonToast(`✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
   gast.openstaand = 0;
   await DB.upsertLid(gast);
   updateAfrekenenBlok();
   updateOpenstaand();
+
+  // Stuur bon per e-mail (op de achtergrond)
+  console.log('[bon] isOnline:', isOnline, '| openLog.length:', openLog.length, '| plek:', gast.plek);
+  if (isOnline && openLog.length > 0) {
+    fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plek_code: gast.plek, bestellingen: openLog, totaal_bedrag: betaaldBedrag }),
+    }).then(r => r.json()).then(d => {
+      console.log('[bon] response:', d);
+      if (d.ok) toonToast(`📧 Bon verstuurd naar ${d.email}`);
+      else toonToast(`⚠️ Bon niet verstuurd: ${d.fout || JSON.stringify(d)}`);
+    }).catch(e => toonToast('⚠️ Bon fout: ' + e.message));
+  } else {
+    toonToast(`⚠️ Bon NIET verstuurd (online:${isOnline}, regels:${openLog.length})`);
+  }
 }
 
 async function afrekenen(uid) {
@@ -1504,10 +2460,10 @@ function renderLedenGrid() {
   document.getElementById('leden-aantal').textContent = Object.keys(gasten).length;
   document.getElementById('leden-kaart-grid').innerHTML = gefilterd.map(([uid, g]) => {
     const initialen = g.naam.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    return `<div class="lid-kaart" onclick="selecteerLid('${uid}')">
+    return `<div class="lid-kaart" onclick="toonRekening('${uid}')">
       <div class="lid-kaart-avatar">${initialen}</div>
       <div>
-        <div class="lid-kaart-naam">${g.naam}${g.beheerder ? '<span class="badge-beheer">beheerder</span>' : ''}</div>
+        <div class="lid-kaart-naam">${g.naam}${g.beheerder ? '<span class="badge-beheer">beheerder</span>' : ''}${g.type === 'gast' ? '<span class="badge-beheer" style="background:#7f8c8d">gast</span>' : ''}</div>
         <div class="lid-kaart-plek">Plek ${g.plek}</div>
         ${g.openstaand > 0 ? `<div class="lid-kaart-openstaand">Openstaand: €${Number(g.openstaand).toFixed(2).replace('.', ',')}</div>` : ''}
       </div>
@@ -1543,30 +2499,48 @@ async function voegLidToe() {
   const plek = document.getElementById('lid-plek').value.trim().toUpperCase();
   const beheerder = document.getElementById('lid-beheerder').checked;
   if (!naam || !plek) { toonToast('⚠️ Vul naam en pleknummer in'); return; }
+  const type = document.getElementById('lid-type').value;
+  const pincode = type === 'lid' ? document.getElementById('lid-pincode').value.trim() : null;
   const uid = 'M' + Math.random().toString(36).substr(2, 6).toUpperCase();
-  const lid = { uid, naam, plek, openstaand: 0, beheerder };
+  const lid = { uid, naam, plek, openstaand: 0, beheerder, type, pincode: pincode || null };
   gasten[uid] = lid;
   await DB.upsertLid(lid);
   document.getElementById('lid-naam').value = '';
   document.getElementById('lid-plek').value = '';
+  document.getElementById('lid-pincode').value = '';
+  document.getElementById('lid-type').value = 'lid';
+  document.getElementById('lid-pincode-blok').style.display = '';
   document.getElementById('lid-beheerder').checked = false;
-  toonToast(`✓ ${naam} (plek ${plek})${beheerder ? ' — beheerder' : ''} toegevoegd`);
+  toonToast(`✓ ${naam} (plek ${plek}) — ${type === 'gast' ? 'gast' : beheerder ? 'beheerder' : 'lid'} toegevoegd`);
   renderLedenGrid();
+}
+
+async function normaliseerVolgorde() {
+  producten.sort((a, b) => (a.volgorde ?? 99999) - (b.volgorde ?? 99999));
+  const gewijzigd = producten.filter((p, i) => p.volgorde !== i * 10);
+  producten.forEach((p, i) => { p.volgorde = i * 10; });
+  if (gewijzigd.length) await Promise.all(producten.map(p => db.producten.put(p)));
 }
 
 async function renderArtikelLijst() {
   producten = await DB.getProducten();
+  await normaliseerVolgorde();
+
   document.getElementById('artikel-aantal').textContent = producten.length;
   document.getElementById('artikel-lijst').innerHTML = producten.map((p, i) => `
     <div class="artikel-rij ${p.actief === false ? 'artikel-inactief' : ''}">
-      <span class="artikel-emoji">${p.emoji}</span>
+      <div style="display:flex;flex-direction:column;gap:2px;margin-right:4px">
+        <button class="icon-btn" style="padding:2px 6px;font-size:0.8rem" onclick="verschuifArtikel(${i},-1)" ${i===0?'disabled':''} title="Omhoog">▲</button>
+        <button class="icon-btn" style="padding:2px 6px;font-size:0.8rem" onclick="verschuifArtikel(${i},1)" ${i===producten.length-1?'disabled':''} title="Omlaag">▼</button>
+      </div>
+      <span class="artikel-emoji">${p.emoji?.startsWith('/icons/') ? `<img src="${p.emoji}" style="width:1.6rem;height:1.6rem;object-fit:contain;vertical-align:middle">` : (p.emoji || '🛒')}</span>
       <div class="artikel-info">
         <div class="artikel-naam">${p.naam} <span style="font-size:0.75rem;color:var(--kr-muted);font-weight:400">${p.categorie || ''}</span></div>
         ${p.omschr ? `<div class="artikel-omschr">${p.omschr}</div>` : ''}
       </div>
-      <span class="artikel-prijs">€${p.prijs.toFixed(2).replace('.', ',')}</span>
+      <span class="artikel-prijs">€${Number(p.prijs).toFixed(2).replace('.', ',')}</span>
       ${p.voorraad !== '' && p.voorraad !== undefined
-        ? `<span style="font-size:0.8rem;font-weight:600;color:${p.voorraad === 0 ? '#e74c3c' : p.voorraad <= (p.laagWaarschuwing||0) ? '#e67e22' : 'var(--kr-muted)'}">
+        ? `<span style="font-size:0.8rem;font-weight:600;color:${p.voorraad === 0 ? '#e74c3c' : p.voorraad <= (p.laag_waarschuwing||0) ? '#e67e22' : 'var(--kr-muted)'}">
             ${p.voorraad === 0 ? '❌ Op' : `📦 ${p.voorraad}`}</span>`
         : `<span style="font-size:0.8rem;color:var(--kr-muted)">∞</span>`}
       <button class="icon-btn" onclick="bewerkArtikel(${i})" title="Bewerken">✏️</button>
@@ -1574,6 +2548,22 @@ async function renderArtikelLijst() {
       <button class="icon-btn verwijder" onclick="verwijderArtikel(${i})" title="Verwijderen">🗑️</button>
     </div>
   `).join('') || '<div style="color:var(--kr-muted);font-size:0.9rem;padding:8px">Nog geen artikelen</div>';
+}
+
+async function verschuifArtikel(i, richting) {
+  const j = i + richting;
+  if (j < 0 || j >= producten.length) return;
+  [producten[i], producten[j]] = [producten[j], producten[i]];
+  producten.forEach((p, idx) => { p.volgorde = idx * 10; });
+  // Lokaal direct schrijven (snel, geen UI-vertraging)
+  await Promise.all(producten.map(p => db.producten.put(p)));
+  // Render alvast, sync loopt op de achtergrond
+  await renderArtikelLijst();
+  // Volledige records via sync-wachtrij naar Supabase (met retry)
+  for (const p of producten) {
+    await db.sync_queue.add({ tabel: 'producten', actie: 'upsert', data: JSON.stringify(p), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+  }
+  if (isOnline) syncWachtrij();
 }
 
 async function slaArtikelOp() {
@@ -1609,6 +2599,7 @@ function bewerkArtikel(i) {
   document.getElementById('art-voorraad').value = p.voorraad ?? '';
   document.getElementById('art-laag').value = p.laag_waarschuwing ?? '';
   document.getElementById('edit-index').value = i;
+  document.querySelectorAll('.icoon-kies-btn').forEach(b => b.classList.toggle('actief', b.dataset.waarde === p.emoji));
   document.getElementById('artikel-form-titel').textContent = 'Artikel bewerken';
   document.getElementById('art-naam').focus();
 }
@@ -1626,6 +2617,16 @@ async function verwijderArtikel(i) {
   await renderArtikelLijst();
 }
 
+function kiesIconImg(src) {
+  document.getElementById('art-emoji').value = src;
+  document.querySelectorAll('.icoon-kies-btn').forEach(b => b.classList.toggle('actief', b.dataset.waarde === src));
+}
+
+function kiesIconEmoji(e) {
+  document.getElementById('art-emoji').value = e;
+  document.querySelectorAll('.icoon-kies-btn').forEach(b => b.classList.toggle('actief', b.dataset.waarde === e));
+}
+
 function resetArtikelForm() {
   document.getElementById('art-naam').value = '';
   document.getElementById('art-prijs').value = '';
@@ -1636,6 +2637,7 @@ function resetArtikelForm() {
   document.getElementById('art-laag').value = '';
   document.getElementById('edit-index').value = '';
   document.getElementById('artikel-form-titel').textContent = 'Nieuw artikel toevoegen';
+  document.querySelectorAll('.icoon-kies-btn').forEach(b => b.classList.remove('actief'));
 }
 
 function toonToast(tekst) {
@@ -1648,8 +2650,232 @@ function toonToast(tekst) {
 // ── Opstarten ─────────────────────────────────────────────────────────────────
 init().catch(console.error);
 
+// ── Geluiden via Web Audio API ───────────────────────────────────────────────
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function speelToon(freq, duur, type = 'sine', gain = 0.3) {
+  const speel = () => {
+    const osc = audioCtx.createOscillator();
+    const vol = audioCtx.createGain();
+    osc.connect(vol);
+    vol.connect(audioCtx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    vol.gain.setValueAtTime(gain, audioCtx.currentTime);
+    vol.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duur);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duur);
+  };
+  if (audioCtx.state === 'suspended') audioCtx.resume().then(speel); else speel();
+}
+
+function geluidScan()      { speelToon(880, 0.12); setTimeout(() => speelToon(1320, 0.18), 80); }
+function geluidArtikel()   { speelToon(660, 0.08, 'sine', 0.15); }
+function geluidBevestigd() { speelToon(523, 0.1); setTimeout(() => speelToon(659, 0.1), 90); setTimeout(() => speelToon(784, 0.2), 180); }
+
+// ── NFC-reader luisteraar (USB HID keyboard emulator) ────────────────────────
+// De reader typt de UID snel achter elkaar en sluit af met Enter.
+// We bufferen de tekens en verwerken bij Enter — alleen als er geen
+// tekstveld actief is (zodat formulieren gewoon blijven werken).
+(function() {
+  let buffer = '';
+  let timer = null;
+
+  document.addEventListener('keydown', function(e) {
+    const tag = e.target.tagName;
+    const isInvoer = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+    if (e.key === 'Enter' && buffer.length > 0) {
+      if (!isInvoer) {
+        const uid = buffer.trim();
+        buffer = '';
+        clearTimeout(timer);
+        if (uid) scanBandje(uid);
+      }
+      return;
+    }
+
+    // Buiten invoervelden: bufferen (reader typt razendsnel)
+    if (!isInvoer && e.key.length === 1) {
+      buffer += e.key;
+      // Reset buffer na 500ms stilte (bescherming bij handmatige invoer)
+      clearTimeout(timer);
+      timer = setTimeout(() => { buffer = ''; }, 500);
+    }
+  });
+})();
+
 // Sync elke 60 seconden als online
 setInterval(() => { if (isOnline) syncWachtrij(); }, 60000);
+
+// ── Plekken & Bandjes beheer ─────────────────────────────────────────────────
+
+function renderPlekkenLijst() {
+  const el = document.getElementById('plekken-lijst');
+  if (!el) return;
+  const rijen = Object.values(plekkenCache).sort((a, b) => a.plek_code.localeCompare(b.plek_code, undefined, { numeric: true }));
+  if (rijen.length === 0) {
+    el.innerHTML = '<p style="font-size:0.85rem;color:var(--kr-muted)">Nog geen plekken aangemaakt.</p>';
+    return;
+  }
+  el.innerHTML = rijen.map(p => {
+    const lid_uid = 'PLEK-' + p.plek_code;
+    const naam = gasten[lid_uid]?.naam || '—';
+    const bandjes = (koppelingNaarBandjes[p.plek_code] || []);
+    const bandjesHtml = bandjes.length === 0
+      ? '<span style="color:var(--kr-muted);font-size:0.8rem">Geen bandjes</span>'
+      : bandjes.map(uid => `
+          <span style="display:inline-flex;align-items:center;gap:4px;background:#f0f0f0;border-radius:4px;padding:2px 6px;margin:2px;font-family:monospace;font-size:0.8rem">
+            ${uid}
+            <button onclick="ontkoppelBandje('${uid}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.9rem;padding:0;line-height:1" title="Ontkoppelen">✕</button>
+          </span>`).join('');
+    return `<div style="border:1px solid #ddd;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div>
+          <strong>Plek ${p.plek_code}</strong>
+          <span style="color:var(--kr-muted);font-size:0.85rem;margin-left:8px">${naam}</span>
+        </div>
+        <button onclick="verwijderPlek('${p.plek_code}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.85rem" title="Plek verwijderen">🗑️ Plek</button>
+      </div>
+      <div style="margin-bottom:6px">${bandjesHtml}</div>
+      <div style="display:flex;gap:6px">
+        <input id="bandje-voor-plek-${p.plek_code}" placeholder="Bandje UID" style="flex:1;font-size:0.85rem;padding:4px 8px;border:1px solid #ccc;border-radius:4px">
+        <button onclick="voegBandjeAanPlek('${p.plek_code}')" style="font-size:0.85rem;padding:4px 10px;background:var(--kr-forest);color:#fff;border:none;border-radius:4px;cursor:pointer">+ Bandje</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function voegPlekToe() {
+  const plek_code = document.getElementById('nieuw-plek-code').value.trim().toUpperCase();
+  if (!plek_code) { toonToast('⚠️ Vul een pleknummer in'); return; }
+  if (plekkenCache[plek_code]) { toonToast(`⚠️ Plek ${plek_code} bestaat al`); return; }
+
+  const plek = { plek_code };
+  plekkenCache[plek_code] = plek;
+  await DB.upsertPlek(plek);
+
+  const lid_uid = 'PLEK-' + plek_code;
+  if (!gasten[lid_uid]) {
+    const entry = { uid: lid_uid, naam: '—', plek: plek_code, openstaand: 0, type: 'gast', beheerder: false, pincode: null };
+    gasten[lid_uid] = entry;
+    await DB.upsertLid(entry);
+    haalGastNaamOp(plek_code, lid_uid);
+  }
+
+  document.getElementById('nieuw-plek-code').value = '';
+  renderPlekkenLijst();
+  toonToast(`✓ Plek ${plek_code} aangemaakt`);
+}
+
+async function voegBandjeAanPlek(plek_code) {
+  const input = document.getElementById(`bandje-voor-plek-${plek_code}`);
+  const bandje_uid = input?.value.trim();
+  if (!bandje_uid) { toonToast('⚠️ Vul een bandje UID in'); return; }
+
+  const bestaand = bandjeNaarKoppeling[bandje_uid];
+  if (bestaand) {
+    toonToast(`⚠️ Bandje is al gekoppeld aan ${bestaand.koppeling_type} ${bestaand.koppeling_id}`);
+    return;
+  }
+
+  const bandje = { bandje_uid, koppeling_type: 'plek', koppeling_id: plek_code };
+  await DB.upsertBandje(bandje);
+  bandjeNaarKoppeling[bandje_uid] = { koppeling_type: 'plek', koppeling_id: plek_code };
+  if (!koppelingNaarBandjes[plek_code]) koppelingNaarBandjes[plek_code] = [];
+  koppelingNaarBandjes[plek_code].push(bandje_uid);
+
+  if (input) input.value = '';
+  renderPlekkenLijst();
+  toonToast(`✓ Bandje ${bandje_uid} gekoppeld aan plek ${plek_code}`);
+}
+
+async function voegBandjeAanLid(lid_uid) {
+  const input = document.getElementById('bandje-voor-lid-input');
+  const bandje_uid = input?.value.trim();
+  if (!bandje_uid) { toonToast('⚠️ Vul een bandje UID in'); return; }
+
+  const bestaand = bandjeNaarKoppeling[bandje_uid];
+  if (bestaand) {
+    toonToast(`⚠️ Bandje is al gekoppeld aan ${bestaand.koppeling_type} ${bestaand.koppeling_id}`);
+    return;
+  }
+
+  const bandje = { bandje_uid, koppeling_type: 'lid', koppeling_id: lid_uid };
+  await DB.upsertBandje(bandje);
+  bandjeNaarKoppeling[bandje_uid] = { koppeling_type: 'lid', koppeling_id: lid_uid };
+  if (!koppelingNaarBandjes[lid_uid]) koppelingNaarBandjes[lid_uid] = [];
+  koppelingNaarBandjes[lid_uid].push(bandje_uid);
+
+  if (input) input.value = '';
+  renderBandjesInLidModal(lid_uid);
+  toonToast(`✓ Bandje ${bandje_uid} gekoppeld aan lid`);
+}
+
+async function ontkoppelBandje(bandje_uid) {
+  const koppeling = bandjeNaarKoppeling[bandje_uid];
+  if (!koppeling) return;
+  await DB.verwijderBandje(bandje_uid);
+  delete bandjeNaarKoppeling[bandje_uid];
+  if (koppelingNaarBandjes[koppeling.koppeling_id]) {
+    koppelingNaarBandjes[koppeling.koppeling_id] = koppelingNaarBandjes[koppeling.koppeling_id].filter(u => u !== bandje_uid);
+  }
+  renderPlekkenLijst();
+  toonToast(`Bandje ${bandje_uid} ontkoppeld`);
+}
+
+function renderBandjesInLidModal(lid_uid) {
+  const el = document.getElementById('lid-bandjes-lijst');
+  if (!el) return;
+  const bandjes = koppelingNaarBandjes[lid_uid] || [];
+  el.innerHTML = bandjes.length === 0
+    ? '<span style="color:var(--kr-muted);font-size:0.85rem">Geen bandjes gekoppeld</span>'
+    : bandjes.map(uid => `
+        <span style="display:inline-flex;align-items:center;gap:4px;background:#f0f0f0;border-radius:4px;padding:3px 8px;margin:2px;font-family:monospace;font-size:0.85rem">
+          ${uid}
+          <button onclick="ontkoppelBandjeVanLid('${uid}','${lid_uid}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.9rem;padding:0;line-height:1">✕</button>
+        </span>`).join('');
+}
+
+async function ontkoppelBandjeVanLid(bandje_uid, lid_uid) {
+  await DB.verwijderBandje(bandje_uid);
+  delete bandjeNaarKoppeling[bandje_uid];
+  if (koppelingNaarBandjes[lid_uid]) {
+    koppelingNaarBandjes[lid_uid] = koppelingNaarBandjes[lid_uid].filter(u => u !== bandje_uid);
+  }
+  renderBandjesInLidModal(lid_uid);
+  toonToast(`Bandje ${bandje_uid} ontkoppeld`);
+}
+
+async function verwijderPlek(plek_code) {
+  if (!confirm(`Plek ${plek_code} en alle bijbehorende bandjekoppelingen verwijderen?`)) return;
+  // Ontkoppel alle bandjes van deze plek
+  const bandjes = koppelingNaarBandjes[plek_code] || [];
+  for (const uid of bandjes) {
+    await DB.verwijderBandje(uid);
+    delete bandjeNaarKoppeling[uid];
+  }
+  delete koppelingNaarBandjes[plek_code];
+  delete plekkenCache[plek_code];
+  await DB.verwijderPlek(plek_code);
+  renderPlekkenLijst();
+  toonToast(`Plek ${plek_code} verwijderd`);
+}
+
+async function forceerSync() {
+  if (!isOnline) { toonToast('⚠️ Geen internet'); return; }
+  toonToast('Synchroniseren…');
+  await syncWachtrij();
+  await updateSyncBadge();
+  toonToast('✅ Synchronisatie voltooid');
+}
+
+async function wisWachtrij() {
+  if (!confirm('Wachtrij wissen? Doe dit alleen als de data al in Supabase staat.')) return;
+  await db.sync_queue.where('gesyncroniseerd').equals(0).modify({ gesyncroniseerd: 1 });
+  await updateSyncBadge();
+  toonToast('✅ Wachtrij gewist');
+}
 </script>
 </body>
 </html>
