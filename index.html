@@ -1725,23 +1725,35 @@ async function toonRekening(uid) {
   const log        = await DB.getLog();
   const betalingen = await DB.getBetalingen();
 
+  // lidBet gesorteerd aflopend (nieuwste eerst) — lidBet[0] is de meest recente betaling
   const lidLog = log.filter(r => r.lid_uid === uid);
   const lidBet = betalingen.filter(b => b.lid_uid === uid);
-  const totaalBetaald    = lidBet.reduce((s, b) => s + Number(b.bedrag), 0);
+  const totaalBetaald      = lidBet.reduce((s, b) => s + Number(b.bedrag), 0);
   const totaalGeconsumeerd = lidLog.reduce((s, r) => s + Number(r.totaal), 0);
+
+  // Openstaand altijd live berekenen — nooit vertrouwen op opgeslagen veld
+  const werkelijkOpenstaand = Math.max(0, totaalGeconsumeerd - totaalBetaald);
+  if (Math.abs(werkelijkOpenstaand - Number(g.openstaand || 0)) > 0.01) {
+    g.openstaand = werkelijkOpenstaand;
+    await DB.upsertLid(g);
+    updateAfrekenenBlokVoor(uid);
+  }
 
   document.getElementById('rek-naam').textContent = g.naam;
   document.getElementById('rek-naam').dataset.uid = uid;
   document.getElementById('rek-plek').textContent = 'Plek ' + g.plek;
-  document.getElementById('rek-openstaand').textContent = '€' + Number(g.openstaand||0).toFixed(2).replace('.', ',');
+  document.getElementById('rek-openstaand').textContent = '€' + werkelijkOpenstaand.toFixed(2).replace('.', ',');
   document.getElementById('rek-betaald').textContent    = '€' + totaalBetaald.toFixed(2).replace('.', ',');
   document.getElementById('rek-totaal').textContent     = '€' + totaalGeconsumeerd.toFixed(2).replace('.', ',');
+
+  // Nieuwste betaling bepaalt de grens: consumptions ná die betaling zijn "Open"
+  const grensTs = lidBet[0]?.betaald_op || '';
 
   document.getElementById('rek-log-tbody').innerHTML = lidLog.length === 0
     ? '<tr><td colspan="4" style="color:var(--kr-muted);padding:10px">Geen consumpties</td></tr>'
     : lidLog.map(r => {
         const d = new Date(r.geregistreerd_op);
-        const open = r.geregistreerd_op > (lidBet[lidBet.length-1]?.betaald_op || '');
+        const open = r.geregistreerd_op > grensTs;
         return `<tr>
           <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
           <td>${r.omschrijving}</td>
@@ -2300,11 +2312,17 @@ async function renderBeheer() {
   await updateSyncBadge();
 }
 
-function updateAfrekenenBlok() {
-  const gast = gasten[huidigeBandje];
+function updateAfrekenenBlokVoor(uid) {
+  const gast = gasten[uid];
+  if (!gast) return;
   const btn = document.getElementById('afrekenen-product-btn');
-  btn.style.display = gast.openstaand > 0 ? '' : 'none';
-  document.getElementById('afrekenen-product-bedrag').textContent = '€' + Number(gast.openstaand).toFixed(2).replace('.', ',');
+  if (btn) { btn.style.display = gast.openstaand > 0 ? '' : 'none'; }
+  const el = document.getElementById('afrekenen-product-bedrag');
+  if (el) el.textContent = '€' + Number(gast.openstaand).toFixed(2).replace('.', ',');
+}
+
+function updateAfrekenenBlok() {
+  if (huidigeBandje) updateAfrekenenBlokVoor(huidigeBandje);
 }
 
 async function openBetaalscherm() {
@@ -2423,16 +2441,21 @@ function bevestigBetaling() {
 
 async function gastRekentAf(wijze = 'contant') {
   const gast = gasten[huidigeBandje];
-  const betaaldBedrag = Number(document.getElementById('betaal-bedrag').textContent.replace('€','').replace(',','.')) || gast.openstaand;
 
-  // Verzamel openstaande bestellingen voor de bon
+  // Verzamel openstaande bestellingen voor de bon vanuit de DOM-tabel
   const openLog = Array.from(document.querySelectorAll('#betaal-log tbody tr')).map(tr => {
     const cellen = tr.querySelectorAll('td');
     return { tijd: cellen[0]?.textContent?.trim(), omschrijving: cellen[1]?.textContent?.trim(), totaal: parseFloat(cellen[2]?.textContent?.replace('€','').replace(',','.')) };
-  }).filter(r => r.omschrijving);
+  }).filter(r => r.omschrijving && !isNaN(r.totaal));
+
+  // Bedrag altijd berekenen uit de log — nooit DOM-tekst vertrouwen als enige bron
+  const betaaldBedrag = openLog.length > 0
+    ? openLog.reduce((s, r) => s + r.totaal, 0)
+    : Number(document.getElementById('betaal-bedrag').textContent.replace('€','').replace(',','.')) || gast.openstaand;
 
   await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: betaaldBedrag, wijze });
   toonToast(`✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
+  // openstaand op 0 na betaling van het volledige openstaande bedrag
   gast.openstaand = 0;
   await DB.upsertLid(gast);
 
