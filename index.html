@@ -2436,16 +2436,16 @@ function bevestigBetaling() {
   toonScherm('tap');
 }
 
-function _verwerkingRegel(nr, tekst) {
+function _verwerkingRegel(nr, tekst, sluit = false) {
   const el = document.getElementById('verwerking-regel' + nr);
   el.textContent = tekst;
   el.style.color = tekst.startsWith('⚠️') ? '#c0392b' : 'var(--kr-forest)';
   requestAnimationFrame(() => { el.style.opacity = '1'; });
-  if (nr === 2) {
+  if (sluit) {
     document.getElementById('verwerking-spinner').style.display = 'none';
     setTimeout(() => {
       document.getElementById('verwerking-overlay').style.display = 'none';
-    }, 4000);
+    }, 2000);
   }
 }
 
@@ -2469,17 +2469,18 @@ async function gastRekentAf(wijze = 'contant') {
   await DB.upsertLid(gast);
 
   if (isOnline && openLog.length > 0) {
+    _verwerkingRegel(2, `📧 Bon wordt verzonden…`);
     fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plek_code: gast.plek, email: gast.email || null, naam: gast.naam, bestellingen: openLog, totaal_bedrag: betaaldBedrag }),
     }).then(r => r.json()).then(d => {
       console.log('[bon] response:', d);
-      if (d.ok) _verwerkingRegel(2, `📧 Bon verstuurd naar ${d.email}`);
-      else _verwerkingRegel(2, `⚠️ Bon niet verstuurd: ${d.fout || JSON.stringify(d)}`);
-    }).catch(e => _verwerkingRegel(2, '⚠️ Bon fout: ' + e.message));
+      if (d.ok) _verwerkingRegel(2, `📧 Bon verstuurd naar ${d.email}`, true);
+      else _verwerkingRegel(2, `⚠️ Bon niet verstuurd: ${d.fout || JSON.stringify(d)}`, true);
+    }).catch(e => _verwerkingRegel(2, '⚠️ Bon fout: ' + e.message, true));
   } else {
-    _verwerkingRegel(2, `⚠️ Geen bon (online:${isOnline}, regels:${openLog.length})`);
+    _verwerkingRegel(2, `⚠️ Geen bon (online:${isOnline}, regels:${openLog.length})`, true);
   }
 }
 
