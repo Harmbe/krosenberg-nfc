@@ -2424,7 +2424,6 @@ async function gastRekentAf(wijze = 'contant') {
   gast.openstaand = 0;
   await DB.upsertLid(gast);
   updateAfrekenenBlok();
-  updateOpenstaand();
 
   // Stuur bon per e-mail (op de achtergrond)
   console.log('[bon] isOnline:', isOnline, '| openLog.length:', openLog.length, '| plek:', gast.plek);
