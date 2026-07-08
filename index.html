@@ -2639,11 +2639,19 @@ function resetArtikelForm() {
   document.querySelectorAll('.icoon-kies-btn').forEach(b => b.classList.remove('actief'));
 }
 
+let _toastWachtrij = [];
+let _toastBezig = false;
 function toonToast(tekst) {
+  _toastWachtrij.push(tekst);
+  if (!_toastBezig) _volgendeToast();
+}
+function _volgendeToast() {
+  if (!_toastWachtrij.length) { _toastBezig = false; return; }
+  _toastBezig = true;
   const t = document.getElementById('toast');
-  t.textContent = tekst;
+  t.textContent = _toastWachtrij.shift();
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(_volgendeToast, 300); }, 3000);
 }
 
 // ── Opstarten ─────────────────────────────────────────────────────────────────
