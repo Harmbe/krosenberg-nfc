@@ -1402,6 +1402,10 @@
           <label>Pleknummer</label>
           <input type="text" id="lid-plek" placeholder="bijv. HV3">
         </div>
+        <div class="form-veld">
+          <label>E-mailadres (voor bon)</label>
+          <input type="email" id="lid-email" placeholder="naam@voorbeeld.nl">
+        </div>
       </div>
       <div class="form-veld" style="margin-bottom:12px">
         <label>Type</label>
@@ -2430,7 +2434,7 @@ async function gastRekentAf(wijze = 'contant') {
     fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plek_code: gast.plek, bestellingen: openLog, totaal_bedrag: betaaldBedrag }),
+      body: JSON.stringify({ plek_code: gast.plek, email: gast.email || null, naam: gast.naam, bestellingen: openLog, totaal_bedrag: betaaldBedrag }),
     }).then(r => r.json()).then(d => {
       console.log('[bon] response:', d);
       if (d.ok) toonToast(`📧 Bon verstuurd naar ${d.email}`);
@@ -2499,12 +2503,14 @@ async function voegLidToe() {
   if (!naam || !plek) { toonToast('⚠️ Vul naam en pleknummer in'); return; }
   const type = document.getElementById('lid-type').value;
   const pincode = type === 'lid' ? document.getElementById('lid-pincode').value.trim() : null;
+  const email = document.getElementById('lid-email').value.trim() || null;
   const uid = 'M' + Math.random().toString(36).substr(2, 6).toUpperCase();
-  const lid = { uid, naam, plek, openstaand: 0, beheerder, type, pincode: pincode || null };
+  const lid = { uid, naam, plek, email, openstaand: 0, beheerder, type, pincode: pincode || null };
   gasten[uid] = lid;
   await DB.upsertLid(lid);
   document.getElementById('lid-naam').value = '';
   document.getElementById('lid-plek').value = '';
+  document.getElementById('lid-email').value = '';
   document.getElementById('lid-pincode').value = '';
   document.getElementById('lid-type').value = 'lid';
   document.getElementById('lid-pincode-blok').style.display = '';
