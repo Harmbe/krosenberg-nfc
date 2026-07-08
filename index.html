@@ -1055,8 +1055,8 @@
     <div style="font-size:2.8rem;margin-bottom:12px">💳</div>
     <h2 style="margin:0 0 4px;color:var(--kr-forest);font-size:1.3rem">Betaling wordt verwerkt</h2>
     <div id="verwerking-spinner" style="margin:10px auto;width:28px;height:28px;border:3px solid var(--kr-leem);border-top-color:var(--kr-forest);border-radius:50%;animation:spin 0.8s linear infinite"></div>
-    <div id="verwerking-regel1" style="margin-top:20px;padding:12px 16px;background:var(--kr-cream);border-radius:10px;font-size:0.95rem;color:var(--kr-forest);font-weight:600;min-height:44px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s"></div>
-    <div id="verwerking-regel2" style="margin-top:10px;padding:12px 16px;background:var(--kr-cream);border-radius:10px;font-size:0.95rem;color:var(--kr-forest);font-weight:600;min-height:44px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.3s"></div>
+    <div id="verwerking-regel1" style="margin-top:16px;padding:12px 16px;background:var(--kr-cream);border-radius:10px;font-size:0.9rem;color:var(--kr-forest);font-weight:600;min-height:42px;display:flex;align-items:center;justify-content:center;text-align:center;opacity:0;transition:opacity 0.3s"></div>
+    <div id="verwerking-regel2" style="margin-top:8px;padding:12px 16px;background:var(--kr-cream);border-radius:10px;font-size:0.9rem;color:var(--kr-forest);font-weight:600;min-height:42px;display:flex;align-items:center;justify-content:center;text-align:center;opacity:0;transition:opacity 0.3s"></div>
   </div>
 </div>
 
@@ -2465,11 +2465,11 @@ async function gastRekentAf(wijze = 'contant') {
 
   await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: betaaldBedrag, wijze });
   _verwerkingRegel(1, `✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
+  if (isOnline && openLog.length > 0) _verwerkingRegel(2, `📧 Bon wordt verzonden…`);
   gast.openstaand = 0;
   await DB.upsertLid(gast);
 
   if (isOnline && openLog.length > 0) {
-    _verwerkingRegel(2, `📧 Bon wordt verzonden…`);
     fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
