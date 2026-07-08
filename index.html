@@ -1985,7 +1985,7 @@ async function scanBandje(bandje_uid) {
         await DB.upsertLid(entry);
       }
       huidigeBandje = lid_uid;
-      winkelwagen = {}; _actiefCategorie = null;
+      winkelwagen = {};
       const gast = gasten[lid_uid];
       document.getElementById('gast-naam').textContent = gast.naam;
       document.getElementById('gast-plek').textContent = 'Plek ' + plek_code;
@@ -2000,7 +2000,7 @@ async function scanBandje(bandje_uid) {
       const gast = gasten[lid_uid];
       if (!gast) { toonToast('⚠️ Lid niet gevonden'); return; }
       huidigeBandje = lid_uid;
-      winkelwagen = {}; _actiefCategorie = null;
+      winkelwagen = {};
       document.getElementById('gast-naam').textContent = gast.naam;
       document.getElementById('gast-plek').textContent = 'Plek ' + gast.plek;
       updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
@@ -2076,18 +2076,6 @@ const CATEGORIE_LABELS = { drank: 'Drank', eten: 'Eten', ijs: 'Ijs', overig: 'Ov
 
 const CATEGORIE_EMOJIS = { drank: '🍺', eten: '🍔', ijs: '🍦', overig: '📦' };
 
-let _actiefCategorie = null;
-
-function kiesCategorie(cat) {
-  _actiefCategorie = cat;
-  renderProducten();
-}
-
-function terugnaarCategorieen() {
-  _actiefCategorie = null;
-  renderProducten();
-}
-
 function renderProducten() {
   const actief = producten.filter(p => p.actief !== false).sort((a,b) => (a.volgorde||0) - (b.volgorde||0));
   const groepen = {};
@@ -2099,25 +2087,16 @@ function renderProducten() {
   const volgorde = ['drank', 'ijs', 'eten', 'overig'];
   const alleCategorieen = [...volgorde, ...Object.keys(groepen).filter(k => !volgorde.includes(k))].filter(c => groepen[c]?.length);
 
-  if (!_actiefCategorie || !groepen[_actiefCategorie]) {
-    // Categorie-kiezer
-    document.getElementById('producten-rijen').innerHTML =
-      `<div class="cat-grid">${alleCategorieen.map(cat => `
-        <button class="cat-btn" onclick="kiesCategorie('${cat}')">
-          <span class="cat-emoji">${CATEGORIE_EMOJIS[cat] || '📦'}</span>
-          <span class="cat-naam">${CATEGORIE_LABELS[cat] || cat}</span>
-          <span class="cat-aantal">${groepen[cat].length} artikel${groepen[cat].length !== 1 ? 'en' : ''}</span>
-        </button>`).join('')}
-      </div>`;
-  } else {
-    // Producten van geselecteerde categorie
-    document.getElementById('producten-rijen').innerHTML =
-      `<button class="cat-terug" onclick="terugnaarCategorieen()">← Categorieën</button>
-       <div style="padding:16px 20px">
-         <div style="font-size:0.8rem;color:var(--kr-muted);font-weight:600;margin-bottom:10px">${CATEGORIE_EMOJIS[_actiefCategorie] || ''} ${CATEGORIE_LABELS[_actiefCategorie] || _actiefCategorie}</div>
-         <div class="producten-grid">${groepen[_actiefCategorie].map(productKnopHTML).join('')}</div>
-       </div>`;
-  }
+  document.getElementById('producten-rijen').innerHTML =
+    `<div style="padding:10px 16px">` +
+    alleCategorieen.map(cat => `
+      <div style="margin-bottom:14px">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--kr-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;padding:0 2px">
+          ${CATEGORIE_EMOJIS[cat] || '📦'} ${CATEGORIE_LABELS[cat] || cat}
+        </div>
+        <div class="producten-grid">${groepen[cat].map(productKnopHTML).join('')}</div>
+      </div>`).join('') +
+    `</div>`;
 }
 
 function voegToe(naam, prijs) {
@@ -2163,7 +2142,7 @@ async function bevestigBestelling() {
     `Totaal openstaand voor ${gast.naam}: €${gast.openstaand.toFixed(2).replace('.', ',')}`;
 
   geluidBevestigd();
-  _actiefCategorie = null;
+  
   toonScherm('bevestig');
 
   // Automatisch bon printen als bestelling eten of ijs bevat
