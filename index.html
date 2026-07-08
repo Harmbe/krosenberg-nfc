@@ -1005,11 +1005,15 @@
         <label>Naam</label>
         <input type="text" id="bewerk-naam" placeholder="Voor- en achternaam">
       </div>
-      <div class="form-veld">
-        <label>Pleknummer</label>
-        <input type="text" id="bewerk-plek" placeholder="bijv. HV3">
+        <div class="form-veld">
+          <label>Pleknummer</label>
+          <input type="text" id="bewerk-plek" placeholder="bijv. HV3">
+        </div>
+        <div class="form-veld">
+          <label>E-mailadres (voor bon)</label>
+          <input type="email" id="bewerk-email" placeholder="naam@voorbeeld.nl">
+        </div>
       </div>
-    </div>
     <div class="form-veld" style="margin-bottom:12px">
       <label>Type</label>
       <select id="bewerk-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('bewerk-pincode-blok').style.display=this.value==='lid'?'':'none'">
@@ -1778,6 +1782,7 @@ function openBewerkLid() {
   document.getElementById('bewerk-pincode').value = '';
   document.getElementById('bewerk-pincode-status').textContent = g.pincode ? '(ingesteld — leeg laten om te bewaren)' : '(nog niet ingesteld)';
   document.getElementById('bewerk-beheerder').checked = !!g.beheerder;
+  document.getElementById('bewerk-email').value = g.email || '';
   renderBandjesInLidModal(uid);
   document.getElementById('bewerk-lid-modal').classList.add('open');
 }
@@ -1799,6 +1804,7 @@ async function slaLidwijzigingOp() {
   g.plek = plek;
   g.type = type;
   g.beheerder = beheerder;
+  g.email = document.getElementById('bewerk-email').value.trim() || null;
   if (type === 'gast') g.pincode = null;
   else if (nieuwePincode) g.pincode = nieuwePincode;
   await DB.upsertLid(g);
