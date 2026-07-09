@@ -3020,8 +3020,12 @@ async function renderPlekDetail() {
   const g = gasten[huidigePlek] || Object.values(gasten).find(x => x.plek === huidigePlek);
   const uid = g?.uid;
 
-  const alleLog = await DB.getLog();
+  const [alleLog, alleBetalingen] = await Promise.all([DB.getLog(), DB.getBetalingen()]);
   let log = uid ? alleLog.filter(r => r.lid_uid === uid) : [];
+
+  // Bepaal de laatste betaling voor dit lid → consumpties daarna zijn open
+  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
+  const laatsteBetaling = betalingenLid[betalingenLid.length - 1] || null;
 
   if (plekDetailVan) log = log.filter(r => (r.geregistreerd_op || '') >= plekDetailVan);
   if (plekDetailTot) {
@@ -3044,6 +3048,7 @@ async function renderPlekDetail() {
 
   const dagen = Object.keys(perDag).sort();
   let totaalAlles = 0;
+  let totaalOpen = 0;
 
   const html = dagen.map(dag => {
     const regels = perDag[dag];
@@ -3052,13 +3057,18 @@ async function renderPlekDetail() {
     const datum = new Date(dag).toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'long' });
     return `<div class="dag-header">${datum}</div>
     <table class="log-tabel" style="margin-bottom:8px">
-      <thead><tr><th>Tijd</th><th>Artikelen</th><th>Bedrag</th></tr></thead>
+      <thead><tr><th>Tijd</th><th>Artikelen</th><th>Bedrag</th><th></th></tr></thead>
       <tbody>
         ${regels.map(r => {
           const t = new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL', {hour:'2-digit',minute:'2-digit'});
-          return `<tr><td>${t}</td><td>${r.omschrijving || '—'}</td><td>€${Number(r.totaal || 0).toFixed(2).replace('.', ',')}</td></tr>`;
+          const isOpen = !laatsteBetaling || r.geregistreerd_op > laatsteBetaling;
+          if (isOpen) totaalOpen += Number(r.totaal || 0);
+          const status = isOpen
+            ? `<span style="font-size:0.75rem;font-weight:600;color:#c0392b;white-space:nowrap">openstaand</span>`
+            : `<span style="font-size:0.75rem;color:var(--kr-muted);white-space:nowrap">afgerekend</span>`;
+          return `<tr><td>${t}</td><td>${r.omschrijving || '—'}</td><td>€${Number(r.totaal || 0).toFixed(2).replace('.', ',')}</td><td>${status}</td></tr>`;
         }).join('')}
-        <tr class="dag-totaal-rij"><td colspan="2">Totaal ${datum}</td><td>€${dagTotaal.toFixed(2).replace('.', ',')}</td></tr>
+        <tr class="dag-totaal-rij"><td colspan="3">Totaal ${datum}</td><td></td></tr>
       </tbody>
     </table>`;
   }).join('');
@@ -3067,11 +3077,19 @@ async function renderPlekDetail() {
     ? `${plekDetailVan || '…'} t/m ${plekDetailTot || 'heden'}`
     : 'alle perioden';
 
+  const openstaandBlok = totaalOpen > 0
+    ? `<div style="margin-top:8px;padding:10px 12px;background:#fdf2f2;border:1px solid #f5c6cb;border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;color:#c0392b">Openstaand</span>
+        <span style="font-weight:700;font-size:1.1rem;color:#c0392b">€${totaalOpen.toFixed(2).replace('.', ',')}</span>
+      </div>`
+    : `<div style="margin-top:8px;padding:10px 12px;background:#f0faf4;border:1px solid #b7dfc8;border-radius:8px;color:#27ae60;font-weight:600;font-size:0.9rem">✓ Alles afgerekend</div>`;
+
   container.innerHTML = `${html}
     <div style="margin-top:12px;padding:10px 12px;background:var(--kr-cream);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
       <span style="font-weight:700;color:var(--kr-forest)">Totaal (${vanTot})</span>
       <span style="font-weight:700;font-size:1.1rem;color:var(--kr-forest)">€${totaalAlles.toFixed(2).replace('.', ',')}</span>
     </div>
+    ${openstaandBlok}
     <button onclick="mailPlekOverzicht('${huidigePlek}')"
       style="margin-top:12px;width:100%;padding:10px;background:var(--kr-forest);color:white;border:none;border-radius:8px;font-size:0.9rem;cursor:pointer;font-weight:600">
       📧 Mail dit overzicht
@@ -3083,7 +3101,7 @@ async function mailPlekOverzicht(plekCode) {
   const uid = g?.uid;
   const isGast = isNaN(parseInt(plekCode));
 
-  const alleLog = await DB.getLog();
+  const [alleLog, alleBetalingen] = await Promise.all([DB.getLog(), DB.getBetalingen()]);
   let log = uid ? alleLog.filter(r => r.lid_uid === uid) : [];
   const van = huidigePlek === plekCode ? plekDetailVan : null;
   const tot = huidigePlek === plekCode ? plekDetailTot : null;
@@ -3091,6 +3109,10 @@ async function mailPlekOverzicht(plekCode) {
   if (tot) log = log.filter(r => (r.geregistreerd_op || '') <= tot + 'T23:59:59');
 
   if (log.length === 0) { toonToast('Geen consumpties om te mailen.'); return; }
+
+  // Betaalstatus per regel
+  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
+  const laatsteBetaling = betalingenLid[betalingenLid.length - 1] || null;
 
   // Groepeer per dag
   const perDag = {};
@@ -3102,15 +3124,25 @@ async function mailPlekOverzicht(plekCode) {
   const perDagArr = Object.keys(perDag).sort().map(dag => {
     const regels = perDag[dag];
     const dagTotaal = regels.reduce((s, r) => s + Number(r.totaal || 0), 0);
-    return { datum: dag, regels: regels.map(r => ({ product: r.omschrijving || '—', aantal: 1, prijs: Number(r.totaal || 0) })), dag_totaal: dagTotaal };
+    return {
+      datum: dag,
+      regels: regels.map(r => ({
+        product: r.omschrijving || '—',
+        aantal: 1,
+        prijs: Number(r.totaal || 0),
+        open: !laatsteBetaling || r.geregistreerd_op > laatsteBetaling,
+      })),
+      dag_totaal: dagTotaal,
+    };
   });
   const totaalBedrag = perDagArr.reduce((s, d) => s + d.dag_totaal, 0);
+  const totaalOpen = perDagArr.reduce((s, d) => s + d.regels.filter(r => r.open).reduce((ss, r) => ss + r.prijs, 0), 0);
 
   if (!isGast) {
     // Lid: stuur naar gast.email
     if (!g?.email) { toonToast('Geen e-mailadres bekend voor dit lid.'); return; }
     toonToast('Bezig met mailen…');
-    await verstuurOverzichtEmail(plekCode, g.email, g.naam, perDagArr, van, tot, totaalBedrag);
+    await verstuurOverzichtEmail(plekCode, g.email, g.naam, perDagArr, van, tot, totaalBedrag, totaalOpen);
     return;
   }
 
@@ -3150,19 +3182,20 @@ async function mailPlekOverzicht(plekCode) {
     const boekingLog = perDagArr.filter(d => d.datum >= bVan && d.datum <= bTot);
     if (boekingLog.length === 0) continue;
     const boekingTotaal = boekingLog.reduce((s, d) => s + d.dag_totaal, 0);
-    await verstuurOverzichtEmail(plekCode, gastEmail, gastNaam, boekingLog, bVan, bTot, boekingTotaal);
+    const boekingOpen = boekingLog.reduce((s, d) => s + d.regels.filter(r => r.open).reduce((ss, r) => ss + r.prijs, 0), 0);
+    await verstuurOverzichtEmail(plekCode, gastEmail, gastNaam, boekingLog, bVan, bTot, boekingTotaal, boekingOpen);
   }
   toonToast(`✅ Overzicht gemaild (${boekingen.length} boeking(en))`);
 }
 
-async function verstuurOverzichtEmail(plekCode, email, naam, perDagArr, van, tot, totaalBedrag) {
+async function verstuurOverzichtEmail(plekCode, email, naam, perDagArr, van, tot, totaalBedrag, totaalOpen = 0) {
   const KASSA_URL = 'https://qdhnwhgfozdncgioeied.supabase.co';
   const KASSA_KEY = SUPABASE_KEY;
   try {
     const res = await fetch(`${KASSA_URL}/functions/v1/stuur-overzicht`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + KASSA_KEY },
-      body: JSON.stringify({ plek_code: plekCode, email, naam, van_datum: van, tot_datum: tot, per_dag: perDagArr, totaal_bedrag: totaalBedrag })
+      body: JSON.stringify({ plek_code: plekCode, email, naam, van_datum: van, tot_datum: tot, per_dag: perDagArr, totaal_bedrag: totaalBedrag, totaal_open: totaalOpen })
     });
     const data = await res.json();
     if (data.ok) {
