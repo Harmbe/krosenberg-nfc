@@ -147,19 +147,39 @@ const DB = {
 
   async upsertPlek(plek) {
     await db.plekken.put(plek);
-    await supa.from('plekken').upsert(plek);
+    if (isOnline) {
+      try { await supa.from('plekken').upsert(plek); }
+      catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
+    } else {
+      await db.sync_queue.add({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    }
   },
   async verwijderPlek(plek_code) {
     await db.plekken.delete(plek_code);
-    await supa.from('plekken').delete().eq('plek_code', plek_code);
+    if (isOnline) {
+      try { await supa.from('plekken').delete().eq('plek_code', plek_code); }
+      catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
+    } else {
+      await db.sync_queue.add({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    }
   },
   async upsertBandje(bandje) {
     await db.bandjes.put(bandje);
-    if (isOnline) await supa.from('bandjes').upsert(bandje);
+    if (isOnline) {
+      try { await supa.from('bandjes').upsert(bandje); }
+      catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
+    } else {
+      await db.sync_queue.add({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    }
   },
   async verwijderBandje(bandje_uid) {
     await db.bandjes.delete(bandje_uid);
-    if (isOnline) await supa.from('bandjes').delete().eq('bandje_uid', bandje_uid);
+    if (isOnline) {
+      try { await supa.from('bandjes').delete().eq('bandje_uid', bandje_uid); }
+      catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
+    } else {
+      await db.sync_queue.add({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    }
   },
   async getBandjesVoor(koppeling_id) {
     return db.bandjes.where('koppeling_id').equals(koppeling_id).toArray();
@@ -208,7 +228,9 @@ const DB = {
           }));
           await supa.from('consumptie_regels').insert(regels);
         }
-      } catch { /* wachtrij pakt het op */ }
+      } catch {
+        await db.sync_queue.add({ tabel: 'consumptie_log', actie: 'upsert', data: JSON.stringify(entry), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+      }
     } else {
       await db.sync_queue.add({ tabel: 'consumptie_log', actie: 'upsert', data: JSON.stringify(entry), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
     }

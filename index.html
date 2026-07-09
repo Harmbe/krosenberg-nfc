@@ -1270,10 +1270,10 @@
     <div class="betaal-bedrag" id="betaal-bedrag">€0,00</div>
 
     <div class="betaal-keuze">
-      <button class="betaal-optie" onclick="kiesBetaalwijze('contant')">
+      <button class="betaal-optie" onclick="kiesBetaalwijze('contant', event)">
         <span class="opt-icon">💵</span>Contant
       </button>
-      <button class="betaal-optie" onclick="kiesBetaalwijze('qr')">
+      <button class="betaal-optie" onclick="kiesBetaalwijze('qr', event)">
         <span class="opt-icon">📱</span>QR / iDEAL
       </button>
     </div>
@@ -1311,6 +1311,7 @@
     </div>
     <div class="bevestig-openstaand" id="bevestig-openstaand"></div>
     <button class="ok-btn" onclick="toonScherm('tap')">OK — Volgende gast</button>
+    <button onclick="annuleerLaatstebestelling()" style="margin-top:8px;background:#e74c3c;color:white;border:none;border-radius:8px;padding:10px 20px;font-size:0.85rem;cursor:pointer;width:100%">↩️ Annuleer deze bestelling</button>
   </div>
 </div>
 
@@ -1395,7 +1396,7 @@
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
         <label class="toggle-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.9rem">
-          <input type="checkbox" id="auto-print-toggle" onchange="slaanAutorintOp(this.checked)"
+          <input type="checkbox" id="auto-print-toggle" onchange="slaaAutoPrintOp(this.checked)"
             style="width:18px;height:18px;cursor:pointer">
           Automatisch printen bij eten/ijs-bestellingen
         </label>
@@ -1568,10 +1569,12 @@
 
 <script src="db.js"></script>
 <script>
+// ── XSS-escape helper ────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 // ── App-staat ────────────────────────────────────────────────────────────────
-// ── Reserveringen-database (re-fective.nl) ───────────────────────────────────
-const RESERVERINGEN_URL = 'https://pgiofnsoqlcabeaskfzc.supabase.co';
-const RESERVERINGEN_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBnaW9mbnNvcWxjYWJlYXNrZnpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTg2OTgsImV4cCI6MjA5Nzk3NDY5OH0.ckOlwCV_Pt7bnTceAEJf2wW4UkIxzHK13chk1KAFTQM';
 
 let gasten = {};      // uid → object (in-memory cache)
 let producten = [];   // array (in-memory cache)
@@ -1601,11 +1604,13 @@ async function init() {
   // Laad bandjes-koppelingen
   bouwBandjesCaches(await DB.getBandjes());
 
-  // Vul standaard-gasten als DB leeg is
+  // Vul standaard-gasten als DB leeg is (alleen op localhost)
   if (ledenArr.length === 0) {
-    for (const [uid, g] of Object.entries(STANDAARD_GASTEN)) {
-      await DB.upsertLid({ uid, ...g });
-      gasten[uid] = { uid, ...g };
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      for (const [uid, g] of Object.entries(STANDAARD_GASTEN)) {
+        await DB.upsertLid({ uid, ...g });
+        gasten[uid] = { uid, ...g };
+      }
     }
   }
 
@@ -1628,8 +1633,12 @@ async function init() {
 let huidigeBandje = null;
 let winkelwagen = {};
 let ingelogd = false;
-const PINCODE = '1234'; // demo-pincode
 let doelScherm = null;
+let _pinPogingen = 0;
+let _gastPinPogingen = 0;
+let _sessieTimeout = null;
+let _openBetaalLog = [];
+let _laatsteNfcScan = 0;
 
 let _bevestigTimer = null;
 
@@ -1730,18 +1739,25 @@ function vereisLogin(scherm) {
   document.getElementById('pin-modal').classList.add('open');
 }
 
-function controleerPin() {
+async function controleerPin() {
+  if (_pinPogingen >= 5) { document.getElementById('pin-fout').textContent = 'Te veel pogingen. Wacht 30 seconden.'; return; }
   const invoer = document.getElementById('pin-invoer').value;
-  if (invoer === PINCODE) {
+  const beheerder = Object.values(gasten).find(g => g.beheerder && g.pincode);
+  const correct = beheerder ? invoer === String(beheerder.pincode) : invoer === '1234';
+  if (correct) {
+    _pinPogingen = 0;
     ingelogd = true;
+    _sessieTimeout = setTimeout(() => { ingelogd = false; document.body.classList.remove('ingelogd'); document.getElementById('uitloggen-btn').style.display='none'; toonScherm('tap'); toonToast('Sessie verlopen — automatisch uitgelogd'); }, 5 * 60 * 1000);
     document.body.classList.add('ingelogd');
     document.getElementById('uitloggen-btn').style.display = '';
     document.querySelectorAll('.admin-tab').forEach(t => t.style.opacity = '1');
     sluitPinModal();
     toonScherm(doelScherm);
   } else {
-    document.getElementById('pin-fout').textContent = 'Verkeerde pincode, probeer opnieuw';
+    _pinPogingen++;
+    document.getElementById('pin-fout').textContent = `Verkeerde pincode (${_pinPogingen}/5)`;
     _pinReset('pin-invoer');
+    if (_pinPogingen >= 5) setTimeout(() => { _pinPogingen = 0; }, 30000);
   }
 }
 
@@ -1864,6 +1880,7 @@ function sluitPinModal() {
 }
 
 function uitloggen() {
+  clearTimeout(_sessieTimeout);
   ingelogd = false;
   document.body.classList.remove('ingelogd');
   document.getElementById('uitloggen-btn').style.display = 'none';
@@ -1929,15 +1946,19 @@ function zelfSelecteer() {
 }
 
 function controleerGastPin() {
+  if (_gastPinPogingen >= 5) { document.getElementById('gast-pin-fout').textContent = 'Te veel pogingen. Probeer later opnieuw.'; return; }
   const invoer = document.getElementById('gast-pin-invoer').value.trim();
   const uid = gastPinUid;
   const gast = gasten[uid];
   if (invoer === String(gast.pincode).trim()) {
+    _gastPinPogingen = 0;
     sluitGastPinModal();
     selecteerLid(uid);
   } else {
-    document.getElementById('gast-pin-fout').textContent = 'Verkeerde pincode, probeer opnieuw';
+    _gastPinPogingen++;
+    document.getElementById('gast-pin-fout').textContent = `Verkeerde pincode (${_gastPinPogingen}/5)`;
     _pinReset('gast-pin-invoer');
+    if (_gastPinPogingen >= 5) setTimeout(() => { _gastPinPogingen = 0; }, 30000);
   }
 }
 
@@ -1993,6 +2014,10 @@ function bouwBandjesCaches(bandjesArr) {
 }
 
 async function scanBandje(bandje_uid) {
+  const nu = Date.now();
+  if (nu - _laatsteNfcScan < 2000) return; // debounce 2 seconden
+  _laatsteNfcScan = nu;
+
   if (bandje_uid === 'random') {
     const keys = Object.keys(gasten);
     bandje_uid = keys[Math.floor(Math.random() * keys.length)];
@@ -2049,26 +2074,22 @@ async function scanBandje(bandje_uid) {
   if (!gast.pincode) openStelPinModal(false);
 }
 
-// Achtergrond: haal huidige gastnaam op uit reserveringen-DB
+// Achtergrond: haal huidige gastnaam op via edge function
 async function haalGastNaamOp(plek_code, lid_uid) {
   const vandaag = new Date().toISOString().slice(0, 10);
   try {
-    const res = await fetch(
-      `${RESERVERINGEN_URL}/rest/v1/boeking?select=gast(naam),plek!inner(code)&plek.code=eq.${encodeURIComponent(plek_code)}&aankomst=lte.${vandaag}&vertrek=gt.${vandaag}&status=eq.bevestigd&limit=1`,
-      { headers: { apikey: RESERVERINGEN_KEY, Authorization: 'Bearer ' + RESERVERINGEN_KEY } }
-    );
-    const data = await res.json();
-    const naam = data[0]?.gast?.naam || '(geen boeking)';
-    if (gasten[lid_uid]) {
+    const res = await fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/haal-gastnaam', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify({ plek_code, datum: vandaag }),
+    });
+    const { naam } = await res.json();
+    if (naam && gasten[lid_uid]) {
       gasten[lid_uid].naam = naam;
-      if (huidigeBandje === lid_uid) {
-        document.getElementById('gast-naam').textContent = naam;
-      }
-      await db.leden.put(gasten[lid_uid]); // Lokaal cachen, geen Supabase-sync nodig
+      if (huidigeBandje === lid_uid) document.getElementById('gast-naam').textContent = naam;
+      await db.leden.put(gasten[lid_uid]);
     }
-  } catch (e) {
-    console.warn('Reserveringen ophalen mislukt:', e);
-  }
+  } catch (e) { console.warn('Gastnaam ophalen mislukt:', e); }
 }
 
 // Backward-compat alias (demo-knoppen en intern gebruik)
@@ -2156,43 +2177,43 @@ async function bevestigBestelling() {
   const gast = gasten[huidigeBandje];
   const items = Object.entries(winkelwagen).filter(([,v]) => v.aantal > 0);
   const totaal = items.reduce((s,[,v]) => s + v.prijs * v.aantal, 0);
+  if (items.length === 0) return;
 
-  gast.openstaand = Math.round((gast.openstaand + totaal) * 100) / 100;
+  // Schrijf log EERST — daarna openstaand berekenen
+  const omschrijving = items.map(([naam, v]) => `${v.aantal}× ${naam}`).join(', ');
+  await DB.voegLogToe({ lid_uid: gast.uid, naam: gast.naam, omschrijving, items, totaal });
 
+  // Voorraadupdates parallel
+  await Promise.all(items.map(async ([naam, v]) => {
+    const p = producten.find(x => x.naam === naam);
+    if (p && p.voorraad !== null && p.voorraad !== undefined && p.voorraad !== '') {
+      p.voorraad = Math.max(0, p.voorraad - v.aantal);
+      await DB.upsertProduct(p);
+    }
+  }));
+
+  // Openstaand ophalen uit de log (betrouwbaar)
+  const alleLog = await DB.getLog();
+  const alleBetalingen = await DB.getBetalingen();
+  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === gast.uid).map(b => b.betaald_op).sort();
+  const laatste = betalingenLid[betalingenLid.length - 1] || null;
+  gast.openstaand = Math.round(alleLog.filter(r => r.lid_uid === gast.uid && (!laatste || r.geregistreerd_op > laatste)).reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
+  await DB.upsertLid(gast);
+
+  // UI-update
   document.getElementById('bevestig-regels').innerHTML = items.map(([naam, v]) =>
-    `<div class="bevestig-regel"><span>${v.aantal}× ${naam}</span><span>€${(v.prijs * v.aantal).toFixed(2).replace('.', ',')}</span></div>`
+    `<div class="bevestig-regel"><span>${esc(v.aantal)}× ${esc(naam)}</span><span>€${(v.prijs * v.aantal).toFixed(2).replace('.', ',')}</span></div>`
   ).join('');
   document.getElementById('bevestig-totaal').textContent = '€' + totaal.toFixed(2).replace('.', ',');
-  document.getElementById('bevestig-openstaand').textContent =
-    `Totaal openstaand voor ${gast.naam}: €${gast.openstaand.toFixed(2).replace('.', ',')}`;
+  document.getElementById('bevestig-openstaand').textContent = `Totaal openstaand voor ${esc(gast.naam)}: €${gast.openstaand.toFixed(2).replace('.', ',')}`;
 
   geluidBevestigd();
-  
   toonScherm('bevestig');
 
-  // Automatisch bon printen als bestelling eten of ijs bevat
+  // Automatisch bon printen
   const printCategorieen = ['eten'];
-  const heeftEten = items.some(([naam]) => {
-    const p = producten.find(x => x.naam === naam);
-    return p && printCategorieen.includes(p.categorie);
-  });
+  const heeftEten = items.some(([naam]) => { const p = producten.find(x => x.naam === naam); return p && printCategorieen.includes(p.categorie); });
   if (heeftEten && getAutoPrint()) printBon({ naam: gast.naam, plek: gast.plek, items, totaal });
-
-  // Opslaan/syncen op de achtergrond — blokkeert het bevestigingsscherm niet
-  (async () => {
-    await DB.upsertLid(gast);
-
-    for (const [naam, v] of items) {
-      const p = producten.find(x => x.naam === naam);
-      if (p && p.voorraad !== null && p.voorraad !== undefined && p.voorraad !== '') {
-        p.voorraad = Math.max(0, p.voorraad - v.aantal);
-        await DB.upsertProduct(p);
-      }
-    }
-
-    const omschrijving = items.map(([naam, v]) => `${v.aantal}× ${naam}`).join(', ');
-    await DB.voegLogToe({ lid_uid: gast.uid, naam: gast.naam, omschrijving, items, totaal });
-  })();
 }
 
 // ── Printer ──────────────────────────────────────────────────────────────────
@@ -2204,7 +2225,7 @@ function slaaPrinterUrlOp(url) {
   localStorage.setItem('printer_url', url.trim());
 }
 
-function slaanAutorintOp(aan) {
+function slaaAutoPrintOp(aan) {
   localStorage.setItem('auto_print', aan ? '1' : '0');
 }
 
@@ -2254,13 +2275,13 @@ async function renderAdmin() {
     : openstaandLeden.map(([uid, g]) => {
     const open = g.openstaand || 0;
     return `
-    <div class="lid-row" style="cursor:pointer" onclick="toonRekening('${uid}')">
+    <div class="lid-row" style="cursor:pointer" onclick="toonRekening('${esc(uid)}')">
       <div style="flex:1">
-        <div class="lid-naam">${g.naam}</div>
-        <div class="lid-plek">Plek ${g.plek}</div>
+        <div class="lid-naam">${esc(g.naam)}</div>
+        <div class="lid-plek">Plek ${esc(g.plek)}</div>
       </div>
       <span class="lid-openstaand" style="margin-right:8px">⚠️ €${Number(open).toFixed(2).replace('.', ',')}</span>
-      <button class="afrekenen-btn" onclick="event.stopPropagation();afrekenen('${uid}')">Afrekenen</button>
+      <button class="afrekenen-btn" onclick="event.stopPropagation();afrekenen('${esc(uid)}')">Afrekenen</button>
       <span style="color:var(--kr-muted);margin-left:8px;font-size:0.9rem">›</span>
     </div>`;
   }).join('');
@@ -2363,6 +2384,7 @@ async function openBetaalscherm() {
     }
     openLog = logRijen;
   } catch { openLog = []; }
+  _openBetaalLog = openLog;
 
   // Bereken bedrag vanuit log (betrouwbaarder dan openstaand-veld)
   const berekendBedrag = openLog.reduce((s, r) => s + Number(r.totaal), 0);
@@ -2402,7 +2424,7 @@ async function openBetaalscherm() {
   toonScherm('betaal');
 }
 
-function kiesBetaalwijze(wijze) {
+function kiesBetaalwijze(wijze, event) {
   document.querySelectorAll('.betaal-optie').forEach(b => b.classList.remove('actief'));
   event.currentTarget.classList.add('actief');
   document.getElementById('contant-blok').classList.toggle('zichtbaar', wijze === 'contant');
@@ -2469,16 +2491,9 @@ function _verwerkingRegel(nr, tekst, sluit = false) {
 async function gastRekentAf(wijze = 'contant') {
   const gast = gasten[huidigeBandje];
 
-  // Verzamel openstaande bestellingen voor de bon vanuit de DOM-tabel
-  const openLog = Array.from(document.querySelectorAll('#betaal-log tbody tr')).map(tr => {
-    const cellen = tr.querySelectorAll('td');
-    return { tijd: cellen[0]?.textContent?.trim(), omschrijving: cellen[1]?.textContent?.trim(), totaal: parseFloat(cellen[2]?.textContent?.replace('€','').replace(',','.')) };
-  }).filter(r => r.omschrijving && !isNaN(r.totaal));
-
-  // Bedrag altijd berekenen uit de log — nooit DOM-tekst vertrouwen als enige bron
-  const betaaldBedrag = openLog.length > 0
-    ? openLog.reduce((s, r) => s + r.totaal, 0)
-    : Number(document.getElementById('betaal-bedrag').textContent.replace('€','').replace(',','.')) || gast.openstaand;
+  // Gebruik module-variabele gevuld door openBetaalscherm()
+  const openLog = _openBetaalLog.map(r => ({ tijd: new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}), omschrijving: r.omschrijving || '—', totaal: Number(r.totaal || 0) }));
+  const betaaldBedrag = openLog.reduce((s,r) => s + r.totaal, 0) || Number(gast.openstaand) || 0;
 
   await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: betaaldBedrag, wijze });
   _verwerkingRegel(1, `✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
@@ -2503,11 +2518,30 @@ async function gastRekentAf(wijze = 'contant') {
 
 async function afrekenen(uid) {
   const gast = gasten[uid];
-  await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: gast.openstaand, wijze: 'contant' });
-  toonToast(`✓ ${gast.naam} afgerekend — €${gast.openstaand.toFixed(2).replace('.', ',')}`);
+  // Bereken openstaand live uit log
+  const alleLog = await DB.getLog();
+  const alleBetalingen = await DB.getBetalingen();
+  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
+  const laatste = betalingenLid[betalingenLid.length - 1] || null;
+  const openLog = alleLog.filter(r => r.lid_uid === uid && (!laatste || r.geregistreerd_op > laatste));
+  const bedrag = Math.round(openLog.reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
+
+  if (bedrag <= 0) { toonToast('Geen openstaand bedrag'); return; }
+
+  await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag, wijze: 'contant' });
   gast.openstaand = 0;
   await DB.upsertLid(gast);
-  renderBeheer();
+  toonToast(`✓ ${gast.naam} afgerekend — €${bedrag.toFixed(2).replace('.', ',')}`);
+
+  if (isOnline && gast.email && openLog.length > 0) {
+    const bestellingen = openLog.map(r => ({ tijd: new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}), omschrijving: r.omschrijving||'—', totaal: Number(r.totaal||0) }));
+    fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ plek_code: gast.plek, email: gast.email, naam: gast.naam, bestellingen, totaal_bedrag: bedrag }),
+    }).catch(e => console.warn('Bon na afrekening mislukt:', e));
+  }
+
+  renderAdmin();
 }
 
 function renderLedenGrid() {
@@ -2518,11 +2552,11 @@ function renderLedenGrid() {
   document.getElementById('leden-aantal').textContent = Object.keys(gasten).length;
   document.getElementById('leden-kaart-grid').innerHTML = gefilterd.map(([uid, g]) => {
     const initialen = g.naam.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-    return `<div class="lid-kaart" onclick="toonRekening('${uid}')">
-      <div class="lid-kaart-avatar">${initialen}</div>
+    return `<div class="lid-kaart" onclick="toonRekening('${esc(uid)}')">
+      <div class="lid-kaart-avatar">${esc(initialen)}</div>
       <div>
-        <div class="lid-kaart-naam">${g.naam}${g.beheerder ? '<span class="badge-beheer">beheerder</span>' : ''}${g.type === 'gast' ? '<span class="badge-beheer" style="background:#7f8c8d">gast</span>' : ''}</div>
-        <div class="lid-kaart-plek">Plek ${g.plek}</div>
+        <div class="lid-kaart-naam">${esc(g.naam)}${g.beheerder ? '<span class="badge-beheer">beheerder</span>' : ''}${g.type === 'gast' ? '<span class="badge-beheer" style="background:#7f8c8d">gast</span>' : ''}</div>
+        <div class="lid-kaart-plek">Plek ${esc(g.plek)}</div>
         ${g.openstaand > 0 ? `<div class="lid-kaart-openstaand">Openstaand: €${Number(g.openstaand).toFixed(2).replace('.', ',')}</div>` : ''}
       </div>
     </div>`;
@@ -2560,7 +2594,7 @@ async function voegLidToe() {
   const type = document.getElementById('lid-type').value;
   const pincode = type === 'lid' ? document.getElementById('lid-pincode').value.trim() : null;
   const email = document.getElementById('lid-email').value.trim() || null;
-  const uid = 'M' + Math.random().toString(36).substr(2, 6).toUpperCase();
+  const uid = crypto.randomUUID();
   const lid = { uid, naam, plek, email, openstaand: 0, beheerder, type, pincode: pincode || null };
   gasten[uid] = lid;
   await DB.upsertLid(lid);
@@ -2579,7 +2613,7 @@ async function normaliseerVolgorde() {
   producten.sort((a, b) => (a.volgorde ?? 99999) - (b.volgorde ?? 99999));
   const gewijzigd = producten.filter((p, i) => p.volgorde !== i * 10);
   producten.forEach((p, i) => { p.volgorde = i * 10; });
-  if (gewijzigd.length) await Promise.all(producten.map(p => db.producten.put(p)));
+  if (gewijzigd.length) await Promise.all(gewijzigd.map(p => DB.upsertProduct(p)));
 }
 
 async function renderArtikelLijst() {
@@ -2936,6 +2970,31 @@ async function verwijderPlek(plek_code) {
   toonToast(`Plek ${plek_code} verwijderd`);
 }
 
+async function annuleerLaatstebestelling() {
+  const gast = gasten[huidigeBandje];
+  if (!gast) return;
+  const alleLog = await DB.getLog();
+  const laaste = alleLog.find(r => r.lid_uid === gast.uid);
+  if (!laaste) { toonToast('Geen bestelling om te annuleren'); return; }
+  // Verwijder lokaal
+  await db.log.delete(laaste.id);
+  if (isOnline) {
+    try {
+      await supa.from('consumptie_regels').delete().eq('log_id', laaste.id);
+      await supa.from('consumptie_log').delete().eq('id', laaste.id);
+    } catch(e) { console.warn('Storno sync mislukt:', e); }
+  }
+  // Herbereken openstaand
+  const alleLogNa = await DB.getLog();
+  const alleBetalingen = await DB.getBetalingen();
+  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === gast.uid).map(b => b.betaald_op).sort();
+  const laatste = betalingenLid[betalingenLid.length - 1] || null;
+  gast.openstaand = Math.round(alleLogNa.filter(r => r.lid_uid === gast.uid && (!laatste || r.geregistreerd_op > laatste)).reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
+  await DB.upsertLid(gast);
+  toonToast(`↩️ Bestelling "${laaste.omschrijving}" geannuleerd`);
+  toonScherm('tap');
+}
+
 async function forceerSync() {
   if (!isOnline) { toonToast('⚠️ Geen internet'); return; }
   toonToast('Synchroniseren…');
@@ -3002,11 +3061,11 @@ async function renderPlekkenOverzicht() {
     const openBadge = open > 0
       ? `<span class="plek-open-badge">€${open.toFixed(2).replace('.', ',')}</span>`
       : '';
-    return `<div class="plek-rij" onclick="openPlekDetail('${g.plek}')">
-      <span class="plek-code">${g.plek}</span>
-      <span class="plek-naam">${g.naam || '—'}</span>
+    return `<div class="plek-rij" onclick="openPlekDetail('${esc(g.plek)}')">
+      <span class="plek-code">${esc(g.plek)}</span>
+      <span class="plek-naam">${esc(g.naam || '—')}</span>
       ${openBadge}
-      <button onclick="event.stopPropagation();mailPlekOverzicht('${g.plek}')" title="Mail overzicht"
+      <button onclick="event.stopPropagation();mailPlekOverzicht('${esc(g.plek)}')" title="Mail overzicht"
         style="background:var(--kr-forest);color:white;border:none;border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;white-space:nowrap">📧 Mail</button>
     </div>`;
   }).join('');
@@ -3081,9 +3140,9 @@ async function renderPlekDetail() {
           const status = isOpen
             ? `<span style="font-size:0.75rem;font-weight:600;color:#c0392b;white-space:nowrap">openstaand</span>`
             : `<span style="font-size:0.75rem;color:var(--kr-muted);white-space:nowrap">afgerekend</span>`;
-          return `<tr><td>${t}</td><td>${r.omschrijving || '—'}</td><td>€${Number(r.totaal || 0).toFixed(2).replace('.', ',')}</td><td>${status}</td></tr>`;
+          return `<tr><td>${t}</td><td>${esc(r.omschrijving || '—')}</td><td>€${Number(r.totaal || 0).toFixed(2).replace('.', ',')}</td><td>${status}</td></tr>`;
         }).join('')}
-        <tr class="dag-totaal-rij"><td colspan="3">Totaal ${datum}</td><td></td></tr>
+        <tr class="dag-totaal-rij"><td colspan="2">Totaal ${datum}</td><td>€${dagTotaal.toFixed(2).replace('.', ',')}</td><td></td></tr>
       </tbody>
     </table>`;
   }).join('');
@@ -3114,7 +3173,7 @@ async function renderPlekDetail() {
 async function mailPlekOverzicht(plekCode) {
   const g = gasten[plekCode] || Object.values(gasten).find(x => x.plek === plekCode);
   const uid = g?.uid;
-  const isGast = isNaN(parseInt(plekCode));
+  const isGast = g?.type === 'gast';
 
   const [alleLog, alleBetalingen] = await Promise.all([DB.getLog(), DB.getBetalingen()]);
   let log = uid ? alleLog.filter(r => r.lid_uid === uid) : [];
@@ -3168,11 +3227,13 @@ async function mailPlekOverzicht(plekCode) {
 
   let boekingen = [];
   try {
-    const res = await fetch(
-      `${RESERVERINGEN_URL}/rest/v1/boeking?select=aankomst,vertrek,gast(naam,email)&plek=eq.${encodeURIComponent(plekCode)}&aankomst=lte.${totParam}&vertrek=gte.${vanParam}&order=aankomst`,
-      { headers: { apikey: RESERVERINGEN_KEY, Authorization: 'Bearer ' + RESERVERINGEN_KEY } }
-    );
-    boekingen = await res.json();
+    const res = await fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/haal-boekingen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify({ plek_code: plekCode, van: vanParam, tot: totParam }),
+    });
+    const { boekingen: data } = await res.json();
+    boekingen = data || [];
   } catch(e) {
     toonToast('Fout bij ophalen reserveringen: ' + e.message);
     return;
