@@ -2263,12 +2263,10 @@ async function renderAdmin() {
   }));
   const topProduct = Object.entries(perProduct).sort((a,b) => b[1]-a[1])[0];
 
-  const eerstedatum = log[0]?.geregistreerd_op ?? '(geen)';
   document.getElementById('omzet-blok').innerHTML = `
     <div class="omzet-item"><div class="omzet-label">Totaal omzet</div><div class="omzet-waarde">€${totaalOmzet.toFixed(2).replace('.', ',')}</div></div>
-    <div class="omzet-item"><div class="omzet-label">Bestellingen</div><div class="omzet-waarde">${logVandaag.length} / ${log.length}</div></div>
+    <div class="omzet-item"><div class="omzet-label">Bestellingen</div><div class="omzet-waarde">${logVandaag.length}</div></div>
     <div class="omzet-item"><div class="omzet-label">Best verkocht</div><div class="omzet-waarde" style="font-size:1rem">${topProduct ? topProduct[0] : '—'}</div></div>
-    <div style="font-size:0.7rem;color:var(--kr-muted);margin-top:6px;width:100%">debug — vandaag: ${vandaag} · eerste log: ${eerstedatum}</div>
   `;
 
   document.getElementById('betalingen-tbody').innerHTML = betalingen.length === 0
