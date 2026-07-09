@@ -2254,16 +2254,18 @@ async function renderAdmin() {
     </div>`;
   }).join('');
 
-  const totaalOmzet = log.reduce((s, r) => s + Number(r.totaal), 0);
+  const vandaag = new Date().toISOString().slice(0, 10);
+  const logVandaag = log.filter(r => (r.geregistreerd_op || '').slice(0, 10) === vandaag);
+  const totaalOmzet = logVandaag.reduce((s, r) => s + Number(r.totaal), 0);
   const perProduct = {};
-  log.forEach(r => (r.items||[]).forEach(([naam, v]) => {
+  logVandaag.forEach(r => (r.items||[]).forEach(([naam, v]) => {
     perProduct[naam] = (perProduct[naam] || 0) + v.aantal;
   }));
   const topProduct = Object.entries(perProduct).sort((a,b) => b[1]-a[1])[0];
 
   document.getElementById('omzet-blok').innerHTML = `
     <div class="omzet-item"><div class="omzet-label">Totaal omzet</div><div class="omzet-waarde">€${totaalOmzet.toFixed(2).replace('.', ',')}</div></div>
-    <div class="omzet-item"><div class="omzet-label">Bestellingen</div><div class="omzet-waarde">${log.length}</div></div>
+    <div class="omzet-item"><div class="omzet-label">Bestellingen</div><div class="omzet-waarde">${logVandaag.length}</div></div>
     <div class="omzet-item"><div class="omzet-label">Best verkocht</div><div class="omzet-waarde" style="font-size:1rem">${topProduct ? topProduct[0] : '—'}</div></div>
   `;
 
