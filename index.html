@@ -2248,21 +2248,19 @@ async function renderAdmin() {
   document.getElementById('totaal-openstaand').textContent = '€' + totalOpenstaand.toFixed(2).replace('.', ',');
 
   const uidMetVerbruik = new Set(log.map(r => r.lid_uid));
-  document.getElementById('leden-lijst').innerHTML = Object.entries(gasten).map(([uid, g]) => {
+  const openstaandLeden = Object.entries(gasten).filter(([, g]) => (g.openstaand || 0) > 0);
+  document.getElementById('leden-lijst').innerHTML = openstaandLeden.length === 0
+    ? '<p style="color:var(--kr-muted);font-size:0.9rem">Geen openstaande rekeningen.</p>'
+    : openstaandLeden.map(([uid, g]) => {
     const open = g.openstaand || 0;
-    const heeftVerbruik = uidMetVerbruik.has(uid);
-    const statusKlasse = open > 0 ? 'lid-openstaand' : 'lid-nul';
-    const statusTekst = open > 0
-      ? '⚠️ €' + Number(open).toFixed(2).replace('.', ',') + ' open'
-      : heeftVerbruik ? '✓ Afgerekend' : '—';
     return `
     <div class="lid-row" style="cursor:pointer" onclick="toonRekening('${uid}')">
       <div style="flex:1">
         <div class="lid-naam">${g.naam}</div>
         <div class="lid-plek">Plek ${g.plek}</div>
       </div>
-      <span class="${statusKlasse}" style="margin-right:8px">${statusTekst}</span>
-      <button class="afrekenen-btn" ${!open ? 'disabled' : ''} onclick="event.stopPropagation();afrekenen('${uid}')">Afrekenen</button>
+      <span class="lid-openstaand" style="margin-right:8px">⚠️ €${Number(open).toFixed(2).replace('.', ',')}</span>
+      <button class="afrekenen-btn" onclick="event.stopPropagation();afrekenen('${uid}')">Afrekenen</button>
       <span style="color:var(--kr-muted);margin-left:8px;font-size:0.9rem">›</span>
     </div>`;
   }).join('');
