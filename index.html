@@ -1742,8 +1742,8 @@ function vereisLogin(scherm) {
 async function controleerPin() {
   if (_pinPogingen >= 5) { document.getElementById('pin-fout').textContent = 'Te veel pogingen. Wacht 30 seconden.'; return; }
   const invoer = document.getElementById('pin-invoer').value;
-  const beheerder = Object.values(gasten).find(g => g.beheerder && g.pincode);
-  const correct = beheerder ? invoer === String(beheerder.pincode) : invoer === '1234';
+  const beheerders = Object.values(gasten).filter(g => g.beheerder && g.pincode);
+  const correct = beheerders.length > 0 ? beheerders.some(g => invoer === String(g.pincode)) : invoer === '1234';
   if (correct) {
     _pinPogingen = 0;
     ingelogd = true;
