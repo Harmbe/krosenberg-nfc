@@ -459,6 +459,17 @@
   .log-tabel th { text-align: left; color: var(--kr-muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--kr-sand); }
   .log-tabel td { padding: 7px 8px; border-bottom: 1px solid #f0ede6; }
 
+  .plek-rij { display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--kr-cream);cursor:pointer;border-radius:8px;transition:background 0.15s; }
+  .plek-rij:hover { background:var(--kr-cream); }
+  .plek-code { font-weight:700;font-size:0.95rem;min-width:64px;color:var(--kr-forest); }
+  .plek-naam { flex:1;font-size:0.9rem;color:#333; }
+  .plek-open-badge { font-size:0.78rem;font-weight:600;color:#c0392b;white-space:nowrap; }
+
+  #plek-detail-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1500;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px;box-sizing:border-box; }
+  #plek-detail-panel { background:white;border-radius:16px;padding:24px;max-width:680px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.2); }
+  .dag-header { font-weight:700;color:var(--kr-forest);font-size:0.88rem;padding:6px 0 3px;border-bottom:1px solid var(--kr-sand);margin-bottom:2px; }
+  .dag-totaal-rij td { font-weight:700;border-top:1px solid var(--kr-sand);color:var(--kr-forest); }
+
   .toast {
     position: fixed;
     top: 20px; right: 20px;
@@ -1316,7 +1327,7 @@
     </div>
 
     <div class="beheer-card" style="grid-column: span 2">
-      <h3>Rekeningen per gast</h3>
+      <h3>Rekeningen per lid / gast</h3>
       <div class="leden-lijst" id="leden-lijst"></div>
     </div>
 
@@ -1331,10 +1342,16 @@
           <span id="eerdere-dagen-pijl">▶</span> Eerdere dagen
         </summary>
         <table class="log-tabel" style="margin-top:12px">
-          <thead><tr><th>Datum</th><th>Tijd</th><th>Gast</th><th>Plek</th><th>Bedrag</th></tr></thead>
+          <thead><tr><th>Datum</th><th>Tijd</th><th>Lid / Gast</th><th>Plek</th><th>Bedrag</th></tr></thead>
           <tbody id="betalingen-eerder-tbody"></tbody>
         </table>
       </details>
+    </div>
+
+    <div class="beheer-card" style="grid-column: span 2">
+      <h3>Plekken overzicht</h3>
+      <input type="search" id="plek-zoek" placeholder="Zoek op plek of naam…" oninput="renderPlekkenOverzicht()" style="width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:8px;padding:8px 12px;font-size:0.9rem;margin-bottom:12px;outline:none">
+      <div id="plekken-rijen"></div>
     </div>
 
   </div>
@@ -2277,7 +2294,7 @@ async function renderAdmin() {
     ${betalingenVandaag.length === 0
       ? '<p style="color:var(--kr-muted);font-size:0.9rem">Nog geen afrekeningen vandaag.</p>'
       : `<table class="log-tabel">
-          <thead><tr><th>Datum</th><th>Tijd</th><th>Gast</th><th>Plek</th><th>Bedrag</th></tr></thead>
+          <thead><tr><th>Datum</th><th>Tijd</th><th>Lid / Gast</th><th>Plek</th><th>Bedrag</th></tr></thead>
           <tbody>${betalingenVandaag.map(betalingRij).join('')}</tbody>
          </table>`}
   `;
@@ -2290,6 +2307,8 @@ async function renderAdmin() {
   if (details) details.addEventListener('toggle', () => {
     document.getElementById('eerdere-dagen-pijl').textContent = details.open ? '▼' : '▶';
   }, { once: false });
+
+  renderPlekkenOverzicht();
 }
 
 async function renderBeheer() {
@@ -2931,6 +2950,251 @@ async function wisWachtrij() {
   await updateSyncBadge();
   toonToast('✅ Wachtrij gewist');
 }
+
+// ── Plekken overzicht ──────────────────────────────────────────────────────
+let huidigePlek = null;
+let plekDetailVan = null;
+let plekDetailTot = null;
+
+function renderPlekkenOverzicht() {
+  const zoek = (document.getElementById('plek-zoek')?.value || '').toLowerCase();
+  const container = document.getElementById('plekken-rijen');
+  if (!container) return;
+
+  const plekken = Object.values(gasten);
+  // Sorteer: numerieke plekken eerst (leden), dan alfanumeriek (gasten)
+  plekken.sort((a, b) => {
+    const aNum = parseInt(a.plek);
+    const bNum = parseInt(b.plek);
+    const aIsNum = !isNaN(aNum);
+    const bIsNum = !isNaN(bNum);
+    if (aIsNum && bIsNum) return aNum - bNum;
+    if (aIsNum) return -1;
+    if (bIsNum) return 1;
+    return (a.plek || '').localeCompare(b.plek || '');
+  });
+
+  const gefilterd = zoek
+    ? plekken.filter(g => (g.plek || '').toLowerCase().includes(zoek) || (g.naam || '').toLowerCase().includes(zoek))
+    : plekken;
+
+  if (gefilterd.length === 0) {
+    container.innerHTML = '<p style="color:var(--kr-muted);font-size:0.9rem;padding:8px">Geen plekken gevonden.</p>';
+    return;
+  }
+
+  container.innerHTML = gefilterd.map(g => {
+    const openBadge = g.openstaand > 0
+      ? `<span class="plek-open-badge">€${Number(g.openstaand).toFixed(2).replace('.', ',')}</span>`
+      : '';
+    return `<div class="plek-rij" onclick="openPlekDetail('${g.plek}')">
+      <span class="plek-code">${g.plek}</span>
+      <span class="plek-naam">${g.naam || '—'}</span>
+      ${openBadge}
+      <button onclick="event.stopPropagation();mailPlekOverzicht('${g.plek}')" title="Mail overzicht"
+        style="background:var(--kr-forest);color:white;border:none;border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;white-space:nowrap">📧 Mail</button>
+    </div>`;
+  }).join('');
+}
+
+function openPlekDetail(plekCode) {
+  huidigePlek = plekCode;
+  const g = gasten[plekCode] || Object.values(gasten).find(x => x.plek === plekCode);
+  document.getElementById('plek-detail-titel').textContent = `Plek ${plekCode}`;
+  document.getElementById('plek-detail-naam').textContent = g ? g.naam : '';
+  const overlay = document.getElementById('plek-detail-overlay');
+  overlay.style.display = 'flex';
+  renderPlekDetail();
+}
+
+function sluitPlekDetail() {
+  document.getElementById('plek-detail-overlay').style.display = 'none';
+  huidigePlek = null;
+}
+
+async function renderPlekDetail() {
+  if (!huidigePlek) return;
+  const container = document.getElementById('plek-detail-log');
+  container.innerHTML = '<p style="color:var(--kr-muted);font-size:0.9rem">Laden…</p>';
+
+  const g = gasten[huidigePlek] || Object.values(gasten).find(x => x.plek === huidigePlek);
+  const uid = g?.uid;
+
+  const alleLog = await DB.getLog();
+  let log = uid ? alleLog.filter(r => r.uid === uid) : [];
+
+  if (plekDetailVan) log = log.filter(r => (r.geregistreerd_op || '') >= plekDetailVan);
+  if (plekDetailTot) {
+    const totIncl = plekDetailTot + 'T23:59:59';
+    log = log.filter(r => (r.geregistreerd_op || '') <= totIncl);
+  }
+
+  if (log.length === 0) {
+    container.innerHTML = '<p style="color:var(--kr-muted);font-size:0.9rem">Geen consumpties gevonden.</p>';
+    return;
+  }
+
+  // Groepeer per dag
+  const perDag = {};
+  log.forEach(r => {
+    const dag = (r.geregistreerd_op || '').slice(0, 10);
+    if (!perDag[dag]) perDag[dag] = [];
+    perDag[dag].push(r);
+  });
+
+  const dagen = Object.keys(perDag).sort();
+  let totaalAlles = 0;
+
+  const html = dagen.map(dag => {
+    const regels = perDag[dag];
+    const dagTotaal = regels.reduce((s, r) => s + Number(r.prijs || 0) * Number(r.aantal || 1), 0);
+    totaalAlles += dagTotaal;
+    const datum = new Date(dag).toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'long' });
+    return `<div class="dag-header">${datum}</div>
+    <table class="log-tabel" style="margin-bottom:8px">
+      <thead><tr><th>Tijd</th><th>Product</th><th>Aantal</th><th>Prijs</th></tr></thead>
+      <tbody>
+        ${regels.map(r => {
+          const t = new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL', {hour:'2-digit',minute:'2-digit'});
+          const subtotaal = Number(r.prijs || 0) * Number(r.aantal || 1);
+          return `<tr><td>${t}</td><td>${r.product_naam || r.product_id}</td><td>${r.aantal || 1}</td><td>€${subtotaal.toFixed(2).replace('.', ',')}</td></tr>`;
+        }).join('')}
+        <tr class="dag-totaal-rij"><td colspan="3">Totaal ${datum}</td><td>€${dagTotaal.toFixed(2).replace('.', ',')}</td></tr>
+      </tbody>
+    </table>`;
+  }).join('');
+
+  const vanTot = plekDetailVan || plekDetailTot
+    ? `${plekDetailVan || '…'} t/m ${plekDetailTot || 'heden'}`
+    : 'alle perioden';
+
+  container.innerHTML = `${html}
+    <div style="margin-top:12px;padding:10px 12px;background:var(--kr-cream);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;color:var(--kr-forest)">Totaal (${vanTot})</span>
+      <span style="font-weight:700;font-size:1.1rem;color:var(--kr-forest)">€${totaalAlles.toFixed(2).replace('.', ',')}</span>
+    </div>
+    <button onclick="mailPlekOverzicht('${huidigePlek}')"
+      style="margin-top:12px;width:100%;padding:10px;background:var(--kr-forest);color:white;border:none;border-radius:8px;font-size:0.9rem;cursor:pointer;font-weight:600">
+      📧 Mail dit overzicht
+    </button>`;
+}
+
+async function mailPlekOverzicht(plekCode) {
+  const g = gasten[plekCode] || Object.values(gasten).find(x => x.plek === plekCode);
+  const uid = g?.uid;
+  const isGast = isNaN(parseInt(plekCode));
+
+  const alleLog = await DB.getLog();
+  let log = uid ? alleLog.filter(r => r.uid === uid) : [];
+  const van = huidigePlek === plekCode ? plekDetailVan : null;
+  const tot = huidigePlek === plekCode ? plekDetailTot : null;
+  if (van) log = log.filter(r => (r.geregistreerd_op || '') >= van);
+  if (tot) log = log.filter(r => (r.geregistreerd_op || '') <= tot + 'T23:59:59');
+
+  if (log.length === 0) { toonToast('Geen consumpties om te mailen.'); return; }
+
+  // Groepeer per dag
+  const perDag = {};
+  log.forEach(r => {
+    const dag = (r.geregistreerd_op || '').slice(0, 10);
+    if (!perDag[dag]) perDag[dag] = [];
+    perDag[dag].push(r);
+  });
+  const perDagArr = Object.keys(perDag).sort().map(dag => {
+    const regels = perDag[dag];
+    const dagTotaal = regels.reduce((s, r) => s + Number(r.prijs || 0) * Number(r.aantal || 1), 0);
+    return { datum: dag, regels: regels.map(r => ({ product: r.product_naam || r.product_id, aantal: Number(r.aantal || 1), prijs: Number(r.prijs || 0) })), dag_totaal: dagTotaal };
+  });
+  const totaalBedrag = perDagArr.reduce((s, d) => s + d.dag_totaal, 0);
+
+  if (!isGast) {
+    // Lid: stuur naar gast.email
+    if (!g?.email) { toonToast('Geen e-mailadres bekend voor dit lid.'); return; }
+    toonToast('Bezig met mailen…');
+    await verstuurOverzichtEmail(plekCode, g.email, g.naam, perDagArr, van, tot, totaalBedrag);
+    return;
+  }
+
+  // Gast: zoek reserveringen voor deze plek in de geselecteerde periode
+  toonToast('Bezig met opzoeken reserveringen…');
+  const vanParam = van || perDagArr[0].datum;
+  const totParam = tot || perDagArr[perDagArr.length - 1].datum;
+
+  let boekingen = [];
+  try {
+    const res = await fetch(
+      `${RESERVERINGEN_URL}/rest/v1/boeking?select=aankomst,vertrek,gast(naam,email)&plek=eq.${encodeURIComponent(plekCode)}&aankomst=lte.${totParam}&vertrek=gte.${vanParam}&order=aankomst`,
+      { headers: { apikey: RESERVERINGEN_KEY, Authorization: 'Bearer ' + RESERVERINGEN_KEY } }
+    );
+    boekingen = await res.json();
+  } catch(e) {
+    toonToast('Fout bij ophalen reserveringen: ' + e.message);
+    return;
+  }
+
+  if (!boekingen || boekingen.length === 0) {
+    // Geen reservering gevonden: mail naar Harm als fallback
+    await verstuurOverzichtEmail(plekCode, 'harm.beukenholdt@icloud.com', g?.naam || plekCode, perDagArr, van, tot, totaalBedrag);
+    toonToast('Geen reservering gevonden — overzicht gemaild naar beheerder.');
+    return;
+  }
+
+  // Stuur per boeking een mail
+  for (const boeking of boekingen) {
+    const bVan = boeking.aankomst;
+    const bTot = boeking.vertrek;
+    const gastNaam = boeking.gast?.naam || g?.naam || plekCode;
+    const gastEmail = boeking.gast?.email;
+    if (!gastEmail) continue;
+
+    // Filter log op boekingsperiode
+    const boekingLog = perDagArr.filter(d => d.datum >= bVan && d.datum <= bTot);
+    if (boekingLog.length === 0) continue;
+    const boekingTotaal = boekingLog.reduce((s, d) => s + d.dag_totaal, 0);
+    await verstuurOverzichtEmail(plekCode, gastEmail, gastNaam, boekingLog, bVan, bTot, boekingTotaal);
+  }
+  toonToast(`✅ Overzicht gemaild (${boekingen.length} boeking(en))`);
+}
+
+async function verstuurOverzichtEmail(plekCode, email, naam, perDagArr, van, tot, totaalBedrag) {
+  const KASSA_URL = 'https://qdhnwhgfozdncgioeied.supabase.co';
+  const KASSA_KEY = SUPABASE_KEY;
+  try {
+    const res = await fetch(`${KASSA_URL}/functions/v1/stuur-overzicht`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + KASSA_KEY },
+      body: JSON.stringify({ plek_code: plekCode, email, naam, van_datum: van, tot_datum: tot, per_dag: perDagArr, totaal_bedrag: totaalBedrag })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      toonToast(`✅ Mail verstuurd naar ${data.email || email}`);
+    } else {
+      toonToast('Fout bij mailen: ' + (data.error || 'onbekend'));
+    }
+  } catch(e) {
+    toonToast('Fout bij mailen: ' + e.message);
+  }
+}
 </script>
+<!-- Plek detail overlay -->
+<div id="plek-detail-overlay">
+  <div id="plek-detail-panel">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div>
+        <h2 id="plek-detail-titel" style="margin:0;color:var(--kr-forest);font-size:1.2rem"></h2>
+        <div id="plek-detail-naam" style="color:var(--kr-muted);font-size:0.88rem;margin-top:2px"></div>
+      </div>
+      <button onclick="sluitPlekDetail()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--kr-muted);line-height:1">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:10px 12px;background:var(--kr-cream);border-radius:8px">
+      <label style="font-size:0.82rem;color:var(--kr-muted)">Van</label>
+      <input type="date" id="plek-filter-van" onchange="plekDetailVan=this.value||null;renderPlekDetail()" style="border:1px solid #ddd;border-radius:6px;padding:4px 8px;font-size:0.82rem">
+      <label style="font-size:0.82rem;color:var(--kr-muted)">Tot</label>
+      <input type="date" id="plek-filter-tot" onchange="plekDetailTot=this.value||null;renderPlekDetail()" style="border:1px solid #ddd;border-radius:6px;padding:4px 8px;font-size:0.82rem">
+      <button onclick="plekDetailVan=null;plekDetailTot=null;document.getElementById('plek-filter-van').value='';document.getElementById('plek-filter-tot').value='';renderPlekDetail()" style="font-size:0.8rem;padding:4px 10px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer">Alles</button>
+    </div>
+    <div id="plek-detail-log"></div>
+  </div>
+</div>
 </body>
 </html>
