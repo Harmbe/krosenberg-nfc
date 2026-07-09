@@ -3021,7 +3021,7 @@ async function renderPlekDetail() {
   const uid = g?.uid;
 
   const alleLog = await DB.getLog();
-  let log = uid ? alleLog.filter(r => r.uid === uid) : [];
+  let log = uid ? alleLog.filter(r => r.lid_uid === uid) : [];
 
   if (plekDetailVan) log = log.filter(r => (r.geregistreerd_op || '') >= plekDetailVan);
   if (plekDetailTot) {
@@ -3085,7 +3085,7 @@ async function mailPlekOverzicht(plekCode) {
   const isGast = isNaN(parseInt(plekCode));
 
   const alleLog = await DB.getLog();
-  let log = uid ? alleLog.filter(r => r.uid === uid) : [];
+  let log = uid ? alleLog.filter(r => r.lid_uid === uid) : [];
   const van = huidigePlek === plekCode ? plekDetailVan : null;
   const tot = huidigePlek === plekCode ? plekDetailTot : null;
   if (van) log = log.filter(r => (r.geregistreerd_op || '') >= van);
