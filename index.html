@@ -2265,15 +2265,24 @@ async function renderAdmin() {
   const log        = await DB.getLog();
   const betalingen = await DB.getBetalingen();
 
-  const totalOpenstaand = Object.values(gasten).reduce((s, g) => s + (g.openstaand || 0), 0);
+  // Bereken openstaand dynamisch per lid
+  const openPerUid = {};
+  for (const g of Object.values(gasten)) {
+    const uid = g.uid;
+    const logLid = log.filter(r => r.lid_uid === uid);
+    const betalingenLid = betalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
+    const laatste = betalingenLid[betalingenLid.length - 1] || null;
+    openPerUid[uid] = logLid.filter(r => !laatste || r.geregistreerd_op > laatste).reduce((s, r) => s + Number(r.totaal || 0), 0);
+  }
+
+  const totalOpenstaand = Object.values(openPerUid).reduce((s, v) => s + v, 0);
   document.getElementById('totaal-openstaand').textContent = '€' + totalOpenstaand.toFixed(2).replace('.', ',');
 
-  const uidMetVerbruik = new Set(log.map(r => r.lid_uid));
-  const openstaandLeden = Object.entries(gasten).filter(([, g]) => (g.openstaand || 0) > 0);
+  const openstaandLeden = Object.entries(gasten).filter(([uid]) => openPerUid[uid] > 0);
   document.getElementById('leden-lijst').innerHTML = openstaandLeden.length === 0
     ? '<p style="color:var(--kr-muted);font-size:0.9rem">Geen openstaande rekeningen.</p>'
     : openstaandLeden.map(([uid, g]) => {
-    const open = g.openstaand || 0;
+    const open = openPerUid[uid] || 0;
     return `
     <div class="lid-row" style="cursor:pointer" onclick="toonRekening('${esc(uid)}')">
       <div style="flex:1">
