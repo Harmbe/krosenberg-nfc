@@ -2956,13 +2956,27 @@ let huidigePlek = null;
 let plekDetailVan = null;
 let plekDetailTot = null;
 
-function renderPlekkenOverzicht() {
+async function renderPlekkenOverzicht() {
   const zoek = (document.getElementById('plek-zoek')?.value || '').toLowerCase();
   const container = document.getElementById('plekken-rijen');
   if (!container) return;
 
+  // Bereken openstaand dynamisch op basis van log en betalingen
+  const [alleLog, alleBetalingen] = await Promise.all([DB.getLog(), DB.getBetalingen()]);
+
+  // Bouw per uid een kaart: openstaand bedrag = som van consumpties na laatste betaling
+  const openPerUid = {};
+  for (const g of Object.values(gasten)) {
+    const uid = g.uid;
+    const logLid = alleLog.filter(r => r.lid_uid === uid);
+    const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
+    const laatste = betalingenLid[betalingenLid.length - 1] || null;
+    openPerUid[uid] = logLid
+      .filter(r => !laatste || r.geregistreerd_op > laatste)
+      .reduce((s, r) => s + Number(r.totaal || 0), 0);
+  }
+
   const plekken = Object.values(gasten);
-  // Sorteer: numerieke plekken eerst (leden), dan alfanumeriek (gasten)
   plekken.sort((a, b) => {
     const aNum = parseInt(a.plek);
     const bNum = parseInt(b.plek);
@@ -2984,8 +2998,9 @@ function renderPlekkenOverzicht() {
   }
 
   container.innerHTML = gefilterd.map(g => {
-    const openBadge = g.openstaand > 0
-      ? `<span class="plek-open-badge">€${Number(g.openstaand).toFixed(2).replace('.', ',')}</span>`
+    const open = openPerUid[g.uid] || 0;
+    const openBadge = open > 0
+      ? `<span class="plek-open-badge">€${open.toFixed(2).replace('.', ',')}</span>`
       : '';
     return `<div class="plek-rij" onclick="openPlekDetail('${g.plek}')">
       <span class="plek-code">${g.plek}</span>
