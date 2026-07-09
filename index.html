@@ -2622,7 +2622,13 @@ async function normaliseerVolgorde() {
   producten.sort((a, b) => (a.volgorde ?? 99999) - (b.volgorde ?? 99999));
   const gewijzigd = producten.filter((p, i) => p.volgorde !== i * 10);
   producten.forEach((p, i) => { p.volgorde = i * 10; });
-  if (gewijzigd.length) await Promise.all(gewijzigd.map(p => DB.upsertProduct(p)));
+  if (!gewijzigd.length) return;
+  // Schrijf direct naar IndexedDB (geen sync_queue per product) + één bulk upsert
+  await db.producten.bulkPut(producten);
+  if (isOnline) {
+    try { await supa.from('producten').upsert(producten.map(p => ({ id: p.id, volgorde: p.volgorde }))); }
+    catch (e) { console.warn('[volgorde] bulk upsert mislukt:', e); }
+  }
 }
 
 async function renderArtikelLijst() {
@@ -3180,6 +3186,7 @@ async function renderPlekDetail() {
 }
 
 async function mailPlekOverzicht(plekCode) {
+  toonToast('📧 Bezig met mailen…');
   const g = gasten[plekCode] || Object.values(gasten).find(x => x.plek === plekCode);
   const uid = g?.uid;
   const isGast = g?.type === 'gast';
