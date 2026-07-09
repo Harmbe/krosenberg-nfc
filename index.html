@@ -1320,25 +1320,21 @@
       <div class="leden-lijst" id="leden-lijst"></div>
     </div>
 
-    <div class="beheer-card">
-      <h3>Omzet vandaag</h3>
-      <div class="omzet-blok" id="omzet-blok"></div>
+    <div class="beheer-card" style="grid-column: span 2">
+      <h3>Dagafsluiting</h3>
+      <div id="dagafsluiting-blok"></div>
     </div>
 
     <div class="beheer-card" style="grid-column: span 2">
-      <h3>Afrekeningen</h3>
-      <table class="log-tabel">
-        <thead><tr><th>Datum</th><th>Tijd</th><th>Gast</th><th>Plek</th><th>Bedrag</th></tr></thead>
-        <tbody id="betalingen-tbody"></tbody>
-      </table>
-    </div>
-
-    <div class="beheer-card" style="grid-column: span 2">
-      <h3>Consumptie log</h3>
-      <table class="log-tabel">
-        <thead><tr><th>Datum</th><th>Tijd</th><th>Gast</th><th>Producten</th><th>Bedrag</th></tr></thead>
-        <tbody id="log-tbody"></tbody>
-      </table>
+      <details id="eerdere-dagen-details">
+        <summary style="cursor:pointer;font-weight:600;color:var(--kr-forest);padding:4px 0;list-style:none;display:flex;align-items:center;gap:8px">
+          <span id="eerdere-dagen-pijl">▶</span> Eerdere dagen
+        </summary>
+        <table class="log-tabel" style="margin-top:12px">
+          <thead><tr><th>Datum</th><th>Tijd</th><th>Gast</th><th>Plek</th><th>Bedrag</th></tr></thead>
+          <tbody id="betalingen-eerder-tbody"></tbody>
+        </table>
+      </details>
     </div>
 
   </div>
@@ -2255,45 +2251,45 @@ async function renderAdmin() {
   }).join('');
 
   const vandaag = new Date().toISOString().slice(0, 10);
-  const logVandaag = log.filter(r => (r.geregistreerd_op || '').slice(0, 10) === vandaag);
-  const totaalOmzet = logVandaag.reduce((s, r) => s + Number(r.totaal), 0);
-  const perProduct = {};
-  logVandaag.forEach(r => (r.items||[]).forEach(([naam, v]) => {
-    perProduct[naam] = (perProduct[naam] || 0) + v.aantal;
-  }));
-  const topProduct = Object.entries(perProduct).sort((a,b) => b[1]-a[1])[0];
+  const betalingenVandaag = betalingen.filter(b => (b.betaald_op || '').slice(0, 10) === vandaag);
+  const betalingenEerder  = betalingen.filter(b => (b.betaald_op || '').slice(0, 10) !== vandaag);
+  const totaalVandaag = betalingenVandaag.reduce((s, b) => s + Number(b.bedrag), 0);
 
-  document.getElementById('omzet-blok').innerHTML = `
-    <div class="omzet-item"><div class="omzet-label">Totaal omzet</div><div class="omzet-waarde">€${totaalOmzet.toFixed(2).replace('.', ',')}</div></div>
-    <div class="omzet-item"><div class="omzet-label">Bestellingen</div><div class="omzet-waarde">${logVandaag.length}</div></div>
-    <div class="omzet-item"><div class="omzet-label">Best verkocht</div><div class="omzet-waarde" style="font-size:1rem">${topProduct ? topProduct[0] : '—'}</div></div>
+  function betalingRij(b) {
+    const d = new Date(b.betaald_op);
+    return `<tr>
+      <td>${d.toLocaleDateString('nl-NL')}</td>
+      <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td>${b.naam}</td>
+      <td>${b.plek}</td>
+      <td style="font-weight:600;color:#c0392b">€${Number(b.bedrag).toFixed(2).replace('.', ',')}</td>
+    </tr>`;
+  }
+
+  document.getElementById('dagafsluiting-blok').innerHTML = `
+    <div style="display:flex;align-items:flex-end;gap:24px;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:0.8rem;color:var(--kr-muted);margin-bottom:2px">Ontvangen vandaag</div>
+        <div style="font-size:2.2rem;font-weight:700;color:var(--kr-forest)">€${totaalVandaag.toFixed(2).replace('.', ',')}</div>
+      </div>
+      <div style="padding-bottom:6px;color:var(--kr-muted);font-size:0.9rem">${betalingenVandaag.length} afrekening${betalingenVandaag.length !== 1 ? 'en' : ''}</div>
+    </div>
+    ${betalingenVandaag.length === 0
+      ? '<p style="color:var(--kr-muted);font-size:0.9rem">Nog geen afrekeningen vandaag.</p>'
+      : `<table class="log-tabel">
+          <thead><tr><th>Datum</th><th>Tijd</th><th>Gast</th><th>Plek</th><th>Bedrag</th></tr></thead>
+          <tbody>${betalingenVandaag.map(betalingRij).join('')}</tbody>
+         </table>`}
   `;
 
-  document.getElementById('betalingen-tbody').innerHTML = betalingen.length === 0
-    ? '<tr><td colspan="5" style="color:var(--kr-muted);padding:16px;text-align:center">Nog geen afrekeningen</td></tr>'
-    : betalingen.map(b => {
-        const d = new Date(b.betaald_op);
-        return `<tr>
-          <td>${d.toLocaleDateString('nl-NL')}</td>
-          <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
-          <td>${b.naam}</td>
-          <td>${b.plek}</td>
-          <td style="font-weight:600;color:#c0392b">€${Number(b.bedrag).toFixed(2).replace('.', ',')}</td>
-        </tr>`;
-      }).join('');
+  document.getElementById('betalingen-eerder-tbody').innerHTML = betalingenEerder.length === 0
+    ? '<tr><td colspan="5" style="color:var(--kr-muted);padding:12px;text-align:center">Geen eerdere afrekeningen</td></tr>'
+    : betalingenEerder.map(betalingRij).join('');
 
-  document.getElementById('log-tbody').innerHTML = log.length === 0
-    ? '<tr><td colspan="4" style="color:var(--kr-muted);padding:16px;text-align:center">Nog geen transacties</td></tr>'
-    : log.map(r => {
-        const d = new Date(r.geregistreerd_op);
-        return `<tr>
-          <td>${d.toLocaleDateString('nl-NL')}</td>
-          <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
-          <td>${r.naam || gasten[r.lid_uid]?.naam || '?'}</td>
-          <td>${r.omschrijving}</td>
-          <td>€${Number(r.totaal).toFixed(2).replace('.', ',')}</td>
-        </tr>`;
-      }).join('');
+  const details = document.getElementById('eerdere-dagen-details');
+  if (details) details.addEventListener('toggle', () => {
+    document.getElementById('eerdere-dagen-pijl').textContent = details.open ? '▼' : '▶';
+  }, { once: false });
 }
 
 async function renderBeheer() {
