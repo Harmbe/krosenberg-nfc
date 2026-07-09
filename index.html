@@ -3047,19 +3047,18 @@ async function renderPlekDetail() {
 
   const html = dagen.map(dag => {
     const regels = perDag[dag];
-    const dagTotaal = regels.reduce((s, r) => s + Number(r.prijs || 0) * Number(r.aantal || 1), 0);
+    const dagTotaal = regels.reduce((s, r) => s + Number(r.totaal || 0), 0);
     totaalAlles += dagTotaal;
     const datum = new Date(dag).toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'long' });
     return `<div class="dag-header">${datum}</div>
     <table class="log-tabel" style="margin-bottom:8px">
-      <thead><tr><th>Tijd</th><th>Product</th><th>Aantal</th><th>Prijs</th></tr></thead>
+      <thead><tr><th>Tijd</th><th>Artikelen</th><th>Bedrag</th></tr></thead>
       <tbody>
         ${regels.map(r => {
           const t = new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL', {hour:'2-digit',minute:'2-digit'});
-          const subtotaal = Number(r.prijs || 0) * Number(r.aantal || 1);
-          return `<tr><td>${t}</td><td>${r.product_naam || r.product_id}</td><td>${r.aantal || 1}</td><td>€${subtotaal.toFixed(2).replace('.', ',')}</td></tr>`;
+          return `<tr><td>${t}</td><td>${r.omschrijving || '—'}</td><td>€${Number(r.totaal || 0).toFixed(2).replace('.', ',')}</td></tr>`;
         }).join('')}
-        <tr class="dag-totaal-rij"><td colspan="3">Totaal ${datum}</td><td>€${dagTotaal.toFixed(2).replace('.', ',')}</td></tr>
+        <tr class="dag-totaal-rij"><td colspan="2">Totaal ${datum}</td><td>€${dagTotaal.toFixed(2).replace('.', ',')}</td></tr>
       </tbody>
     </table>`;
   }).join('');
@@ -3102,8 +3101,8 @@ async function mailPlekOverzicht(plekCode) {
   });
   const perDagArr = Object.keys(perDag).sort().map(dag => {
     const regels = perDag[dag];
-    const dagTotaal = regels.reduce((s, r) => s + Number(r.prijs || 0) * Number(r.aantal || 1), 0);
-    return { datum: dag, regels: regels.map(r => ({ product: r.product_naam || r.product_id, aantal: Number(r.aantal || 1), prijs: Number(r.prijs || 0) })), dag_totaal: dagTotaal };
+    const dagTotaal = regels.reduce((s, r) => s + Number(r.totaal || 0), 0);
+    return { datum: dag, regels: regels.map(r => ({ product: r.omschrijving || '—', aantal: 1, prijs: Number(r.totaal || 0) })), dag_totaal: dagTotaal };
   });
   const totaalBedrag = perDagArr.reduce((s, d) => s + d.dag_totaal, 0);
 
