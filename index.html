@@ -2265,9 +2265,11 @@ async function renderAdmin() {
     </div>`;
   }).join('');
 
-  const vandaag = new Date().toISOString().slice(0, 10);
-  const betalingenVandaag = betalingen.filter(b => (b.betaald_op || '').slice(0, 10) === vandaag);
-  const betalingenEerder  = betalingen.filter(b => (b.betaald_op || '').slice(0, 10) !== vandaag);
+  const now = new Date();
+  const vandaag = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const lokaalDag = b => { const d = new Date(b.betaald_op); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+  const betalingenVandaag = betalingen.filter(b => b.betaald_op && lokaalDag(b) === vandaag);
+  const betalingenEerder  = betalingen.filter(b => !b.betaald_op || lokaalDag(b) !== vandaag);
   const totaalVandaag = betalingenVandaag.reduce((s, b) => s + Number(b.bedrag), 0);
 
   function betalingRij(b) {
