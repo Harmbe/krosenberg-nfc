@@ -2589,7 +2589,10 @@ async function renderArtikelLijst() {
             ${p.voorraad === 0 ? '❌ Op' : `📦 ${p.voorraad}`}</span>`
         : `<span style="font-size:0.8rem;color:var(--kr-muted)">∞</span>`}
       <button class="icon-btn" onclick="bewerkArtikel(${i})" title="Bewerken">✏️</button>
-      <button class="icon-btn" onclick="toggleArtikel(${i})" title="${p.actief === false ? 'Activeren' : 'Deactiveren'}">${p.actief === false ? '👁️' : '🚫'}</button>
+      <label style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;font-size:0.7rem;color:var(--kr-muted);white-space:nowrap">
+        <input type="checkbox" ${p.actief !== false ? 'checked' : ''} onchange="toggleArtikel(${i})" style="width:18px;height:18px;accent-color:var(--kr-forest);cursor:pointer">
+        In menu
+      </label>
       <button class="icon-btn verwijder" onclick="verwijderArtikel(${i})" title="Verwijderen">🗑️</button>
     </div>
   `).join('') || '<div style="color:var(--kr-muted);font-size:0.9rem;padding:8px">Nog geen artikelen</div>';
