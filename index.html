@@ -85,6 +85,9 @@
     width: 100%;
     text-align: center;
     box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .nfc-icon {
@@ -1170,7 +1173,7 @@
 
 <!-- TAPSCHERM (met inline geen-bandje blok) -->
 <div id="screen-tap" class="screen active">
-  <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;align-items:flex-start;padding:24px;width:100%;box-sizing:border-box">
+  <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;align-items:stretch;padding:24px;width:100%;box-sizing:border-box">
 
     <!-- Bandje scannen -->
     <div class="tap-card">
