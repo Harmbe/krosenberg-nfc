@@ -1311,7 +1311,6 @@
     </div>
     <div class="bevestig-openstaand" id="bevestig-openstaand"></div>
     <button class="ok-btn" onclick="toonScherm('tap')">OK — Volgende gast</button>
-    <button onclick="annuleerLaatstebestelling()" style="margin-top:8px;background:#e74c3c;color:white;border:none;border-radius:8px;padding:10px 20px;font-size:0.85rem;cursor:pointer;width:100%">↩️ Annuleer deze bestelling</button>
   </div>
 </div>
 
@@ -2983,31 +2982,6 @@ async function verwijderPlek(plek_code) {
   await DB.verwijderPlek(plek_code);
   renderPlekkenLijst();
   toonToast(`Plek ${plek_code} verwijderd`);
-}
-
-async function annuleerLaatstebestelling() {
-  const gast = gasten[huidigeBandje];
-  if (!gast) return;
-  const alleLog = await DB.getLog();
-  const laaste = alleLog.find(r => r.lid_uid === gast.uid);
-  if (!laaste) { toonToast('Geen bestelling om te annuleren'); return; }
-  // Verwijder lokaal
-  await db.log.delete(laaste.id);
-  if (isOnline) {
-    try {
-      await supa.from('consumptie_regels').delete().eq('log_id', laaste.id);
-      await supa.from('consumptie_log').delete().eq('id', laaste.id);
-    } catch(e) { console.warn('Storno sync mislukt:', e); }
-  }
-  // Herbereken openstaand
-  const alleLogNa = await DB.getLog();
-  const alleBetalingen = await DB.getBetalingen();
-  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === gast.uid).map(b => b.betaald_op).sort();
-  const laatste = betalingenLid[betalingenLid.length - 1] || null;
-  gast.openstaand = Math.round(alleLogNa.filter(r => r.lid_uid === gast.uid && (!laatste || r.geregistreerd_op > laatste)).reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
-  await DB.upsertLid(gast);
-  toonToast(`↩️ Bestelling "${laaste.omschrijving}" geannuleerd`);
-  toonScherm('tap');
 }
 
 async function forceerSync() {
