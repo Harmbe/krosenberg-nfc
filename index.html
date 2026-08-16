@@ -66,7 +66,7 @@
 
   .screen { display: none; flex: 1; }
   .screen.active { display: flex; flex-direction: column; }
-  #screen-beheer.active, #screen-admin.active, #screen-artikelen.active, #screen-leden.active { display: block; overflow-y: auto; }
+  #screen-beheer.active, #screen-admin.active, #screen-artikelen.active, #screen-leden.active, #screen-voorraad.active { display: block; overflow-y: auto; }
   #screen-zelf.active, #screen-betaal.active { display: flex; }
 
   /* TAP SCREEN */
@@ -495,6 +495,15 @@
     padding: 24px;
     overflow-y: auto;
   }
+
+  #screen-voorraad {
+    background: var(--kr-sand);
+    padding: 24px;
+    overflow-y: auto;
+  }
+
+  .voorraad-nu { font-size: 0.8rem; color: var(--kr-muted); white-space: nowrap; }
+  .voorraad-invoer { width: 80px; padding: 8px 10px; border: 1px solid var(--kr-leem); border-radius: 7px; font-size: 0.95rem; text-align: center; }
 
   .artikelen-wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 
@@ -953,6 +962,7 @@
       <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('admin')">📊 Omzet &amp; log</button>
       <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('leden')">👥 Leden</button>
       <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('artikelen')">🛒 Artikelen</button>
+      <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('voorraad')">📦 Voorraad aanvullen</button>
       <div class="menu-slot">Instellingen</div>
       <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('beheer')">⚙ Instellingen</button>
       <button id="uitloggen-btn" onclick="uitloggen();sluitBeheerMenu()" style="display:none;color:#e74c3c">Uitloggen</button>
@@ -1569,6 +1579,27 @@
   </div>
 </div>
 
+<div id="screen-voorraad" class="screen">
+  <div style="padding:12px 16px 0"><button onclick="toonScherm('tap')" style="background:none;border:none;cursor:pointer;color:var(--kr-sand);font-size:0.9rem;padding:4px 0">← Terug</button></div>
+  <div class="artikelen-wrap">
+
+    <div class="artikel-formblok">
+      <h3>Voorraad aanvullen</h3>
+      <p style="color:var(--kr-muted);font-size:0.85rem;margin:-8px 0 14px">Net ingekocht? Vul hieronder in hoeveel erbij is gekomen — de teller telt automatisch op bij de huidige voorraad.</p>
+      <div class="artikel-lijst" id="voorraad-lijst"></div>
+    </div>
+
+    <div class="artikel-formblok">
+      <h3>Laatste aanvullingen</h3>
+      <table class="log-tabel">
+        <thead><tr><th>Wanneer</th><th>Artikel</th><th>Erbij</th><th>Nieuwe voorraad</th><th>Door</th></tr></thead>
+        <tbody id="voorraad-log-tbody"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="db.js"></script>
@@ -1668,6 +1699,7 @@ async function init() {
 let huidigeBandje = null;
 let winkelwagen = {};
 let ingelogd = false;
+let ingelogdeNaam = null;
 let doelScherm = null;
 let _pinPogingen = 0;
 let _gastPinPogingen = 0;
@@ -1696,12 +1728,13 @@ function toonScherm(naam) {
   const el = document.getElementById('screen-' + naam);
   if (el) el.classList.add('active');
   sluitZelfInvoer();
-  if (naam === 'tap')       { winkelwagen = {}; huidigeBandje = null; if (ingelogd) { ingelogd = false; document.body.classList.remove('ingelogd'); document.getElementById('uitloggen-btn').style.display = 'none'; } }
+  if (naam === 'tap')       { winkelwagen = {}; huidigeBandje = null; if (ingelogd) { ingelogd = false; ingelogdeNaam = null; document.body.classList.remove('ingelogd'); document.getElementById('uitloggen-btn').style.display = 'none'; } }
   if (naam === 'zelf')      { toonScherm('tap'); return; }
   if (naam === 'admin')     { renderAdmin(); }
   if (naam === 'beheer')    { renderBeheer(); }
   if (naam === 'artikelen') { renderArtikelLijst(); }
   if (naam === 'leden')     { renderLedenGrid(); }
+  if (naam === 'voorraad')  { renderVoorraadAanvullen(); }
   if (naam === 'bevestig')  { _bevestigTimer = setTimeout(() => toonScherm('tap'), 8000); }
   autoSchaal();
 }
@@ -1778,11 +1811,13 @@ async function controleerPin() {
   if (_pinPogingen >= 5) { document.getElementById('pin-fout').textContent = 'Te veel pogingen. Wacht 30 seconden.'; return; }
   const invoer = document.getElementById('pin-invoer').value;
   const beheerders = Object.values(gasten).filter(g => g.beheerder && g.pincode);
-  const correct = beheerders.length > 0 ? beheerders.some(g => invoer === String(g.pincode)) : invoer === '1234';
+  const matchendeBeheerder = beheerders.find(g => invoer === String(g.pincode));
+  const correct = beheerders.length > 0 ? !!matchendeBeheerder : invoer === '1234';
   if (correct) {
     _pinPogingen = 0;
     ingelogd = true;
-    _sessieTimeout = setTimeout(() => { ingelogd = false; document.body.classList.remove('ingelogd'); document.getElementById('uitloggen-btn').style.display='none'; toonScherm('tap'); toonToast('Sessie verlopen — automatisch uitgelogd'); }, 5 * 60 * 1000);
+    ingelogdeNaam = matchendeBeheerder ? matchendeBeheerder.naam : null;
+    _sessieTimeout = setTimeout(() => { ingelogd = false; ingelogdeNaam = null; document.body.classList.remove('ingelogd'); document.getElementById('uitloggen-btn').style.display='none'; toonScherm('tap'); toonToast('Sessie verlopen — automatisch uitgelogd'); }, 5 * 60 * 1000);
     document.body.classList.add('ingelogd');
     document.getElementById('uitloggen-btn').style.display = '';
     document.querySelectorAll('.admin-tab').forEach(t => t.style.opacity = '1');
@@ -1917,6 +1952,7 @@ function sluitPinModal() {
 function uitloggen() {
   clearTimeout(_sessieTimeout);
   ingelogd = false;
+  ingelogdeNaam = null;
   document.body.classList.remove('ingelogd');
   document.getElementById('uitloggen-btn').style.display = 'none';
   toonScherm('tap');
@@ -2817,6 +2853,66 @@ function resetArtikelForm() {
   document.getElementById('edit-index').value = '';
   document.getElementById('artikel-form-titel').textContent = 'Nieuw artikel toevoegen';
   document.querySelectorAll('.icoon-kies-btn').forEach(b => b.classList.remove('actief'));
+}
+
+// ── Voorraad aanvullen ─────────────────────────────────────────────────────────
+async function renderVoorraadAanvullen() {
+  producten = await DB.getProducten();
+  const trackedProducten = producten
+    .filter(p => p.voorraad !== null && p.voorraad !== undefined && p.actief !== false)
+    .sort((a, b) => (a.volgorde ?? 0) - (b.volgorde ?? 0));
+
+  document.getElementById('voorraad-lijst').innerHTML = trackedProducten.map(p => `
+    <div class="artikel-rij">
+      <span class="artikel-emoji">${p.emoji?.startsWith('/icons/') ? `<img src="${p.emoji}" style="width:1.6rem;height:1.6rem;object-fit:contain;vertical-align:middle">` : (p.emoji || '🛒')}</span>
+      <div class="artikel-info">
+        <div class="artikel-naam">${esc(p.naam)}</div>
+      </div>
+      <span class="voorraad-nu">nu: <b>${p.voorraad}</b></span>
+      <input type="number" min="1" step="1" placeholder="aantal" class="voorraad-invoer" id="voorraad-invoer-${p.id}" onkeydown="if(event.key==='Enter')vulVoorraadAan('${p.id}')">
+      <button class="opslaan-btn" style="padding:7px 14px;font-size:0.85rem" onclick="vulVoorraadAan('${p.id}')">+ Aanvullen</button>
+    </div>
+  `).join('') || '<div style="color:var(--kr-muted);font-size:0.9rem;padding:8px">Geen artikelen met voorraadregistratie. Zet bij een artikel (via Beheer → Artikelen) een voorraadaantal in om het hier te kunnen aanvullen.</div>';
+
+  renderVoorraadLog();
+}
+
+async function vulVoorraadAan(productId) {
+  const inp = document.getElementById('voorraad-invoer-' + productId);
+  const aantal = parseInt(inp.value);
+  if (!aantal || aantal <= 0) { toonToast('⚠️ Vul een aantal in'); return; }
+
+  const product = producten.find(p => p.id === productId);
+  if (!product) return;
+
+  const nieuweVoorraad = (product.voorraad || 0) + aantal;
+  product.voorraad = nieuweVoorraad;
+  await DB.upsertProduct(product);
+  await DB.voegVoorraadLogToe({
+    product_id: product.id,
+    product_naam: product.naam,
+    aantal,
+    nieuwe_voorraad: nieuweVoorraad,
+    door: ingelogdeNaam,
+  });
+
+  toonToast(`✓ ${aantal}x ${product.naam} bijgeboekt (nu ${nieuweVoorraad})`);
+  await renderVoorraadAanvullen();
+}
+
+async function renderVoorraadLog() {
+  const log = await DB.getVoorraadLog();
+  const tbody = document.getElementById('voorraad-log-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = log.slice(0, 30).map(r => `
+    <tr>
+      <td>${new Date(r.aangemaakt_op).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+      <td>${esc(r.product_naam)}</td>
+      <td>+${r.aantal}</td>
+      <td>${r.nieuwe_voorraad}</td>
+      <td>${esc(r.door || '—')}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="color:var(--kr-muted)">Nog geen aanvullingen</td></tr>';
 }
 
 let _toastWachtrij = [];

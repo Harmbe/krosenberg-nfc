@@ -29,6 +29,16 @@ db.version(3).stores({
   plekken:    'plek_code',
   bandjes:    'bandje_uid, koppeling_type, koppeling_id',
 });
+db.version(4).stores({
+  leden:       'uid, plek, naam',
+  producten:   'id, naam',
+  log:         'id, lid_uid',
+  betalingen:  'id, lid_uid',
+  sync_queue:  '++id, tabel, actie, [gesyncroniseerd+aangemaakt_op]',
+  plekken:     'plek_code',
+  bandjes:     'bandje_uid, koppeling_type, koppeling_id',
+  voorraad_log: 'id, product_id',
+});
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -116,7 +126,7 @@ async function updateSyncBadge() {
 async function laadVanSupabase() {
   if (!isOnline) return;
   try {
-    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }] =
+    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }] =
       await Promise.all([
         supa.from('leden').select('*'),
         supa.from('producten').select('*'),
@@ -124,6 +134,7 @@ async function laadVanSupabase() {
         supa.from('betalingen').select('*'),
         supa.from('plekken').select('*'),
         supa.from('bandjes').select('*'),
+        supa.from('voorraad_log').select('*'),
       ]);
 
     if (leden)     await db.leden.bulkPut(leden);
@@ -135,6 +146,7 @@ async function laadVanSupabase() {
     if (betalingen) await db.betalingen.bulkPut(betalingen);
     if (plekken)    await db.plekken.bulkPut(plekken);
     if (bandjes)    await db.bandjes.bulkPut(bandjes);
+    if (voorraadLog) await db.voorraad_log.bulkPut(voorraadLog);
   } catch (e) { console.warn('Supabase laden mislukt, gebruik lokale data', e); }
 }
 
@@ -186,6 +198,7 @@ const DB = {
   },
   async getLog()       { return (await db.log.toArray()).sort((a,b) => b.geregistreerd_op?.localeCompare(a.geregistreerd_op)); },
   async getBetalingen(){ return (await db.betalingen.toArray()).sort((a,b) => b.betaald_op?.localeCompare(a.betaald_op)); },
+  async getVoorraadLog(){ return (await db.voorraad_log.toArray()).sort((a,b) => b.aangemaakt_op?.localeCompare(a.aangemaakt_op)); },
 
   async upsertLid(lid) {
     lid.bijgewerkt_op = new Date().toISOString();
@@ -240,5 +253,11 @@ const DB = {
     betaling.id = crypto.randomUUID();
     betaling.betaald_op = new Date().toISOString();
     await schrijf('betalingen', 'upsert', betaling);
+  },
+
+  async voegVoorraadLogToe(entry) {
+    entry.id = crypto.randomUUID();
+    entry.aangemaakt_op = new Date().toISOString();
+    await schrijf('voorraad_log', 'upsert', entry);
   },
 };
