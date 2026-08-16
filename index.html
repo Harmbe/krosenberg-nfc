@@ -1620,6 +1620,7 @@ async function laadSaunaInstelling() {
   }
 }
 window.addEventListener('online', laadSaunaInstelling);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') laadSaunaInstelling(); });
 setInterval(() => { if (navigator.onLine) laadSaunaInstelling(); }, 60000);
 
 async function init() {
