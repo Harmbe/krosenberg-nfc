@@ -2659,6 +2659,7 @@ function selecteerLid(uid) {
   updateAfrekenenBlok();
   if (document.getElementById('leden-zoek')) document.getElementById('leden-zoek').value = '';
   toonScherm('producten');
+  verversOpenstaandBijScan(uid);
 }
 
 async function voegLidToe() {
