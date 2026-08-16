@@ -1561,6 +1561,16 @@
           <input type="number" id="art-laag" placeholder="bijv. 5" min="0" step="1">
         </div>
       </div>
+      <div class="form-rij">
+        <div class="form-veld">
+          <label>Inkoopeenheid (optioneel, bv. fles, krat)</label>
+          <input type="text" id="art-inkoopeenheid" placeholder="bijv. fles" maxlength="30">
+        </div>
+        <div class="form-veld">
+          <label>Eenheden per inkoop (bv. glazen per fles)</label>
+          <input type="number" id="art-eenheden-per-inkoop" placeholder="bijv. 6" min="1" step="1">
+        </div>
+      </div>
       <div class="form-veld" style="margin-bottom:14px">
         <label>Omschrijving (optioneel)</label>
         <textarea id="art-omschr" rows="2" placeholder="Korte toelichting..."></textarea>
@@ -2791,12 +2801,15 @@ async function slaArtikelOp() {
   const laagRaw = document.getElementById('art-laag').value;
   const voorraad = voorraadRaw !== '' ? parseInt(voorraadRaw) : null;
   const laag_waarschuwing = laagRaw !== '' ? parseInt(laagRaw) : null;
+  const inkoopeenheid = document.getElementById('art-inkoopeenheid').value.trim() || null;
+  const eenhedenPerInkoopRaw = document.getElementById('art-eenheden-per-inkoop').value;
+  const eenheden_per_inkoop = eenhedenPerInkoopRaw !== '' ? parseInt(eenhedenPerInkoopRaw) : null;
   const editIdx = document.getElementById('edit-index').value;
 
   if (!naam || isNaN(prijs) || prijs < 0) { toonToast('⚠️ Vul naam en prijs in'); return; }
 
   const bestaand = editIdx !== '' ? producten[parseInt(editIdx)] : {};
-  const artikel = { ...bestaand, naam, prijs, emoji, categorie, omschr, voorraad, laag_waarschuwing, actief: true };
+  const artikel = { ...bestaand, naam, prijs, emoji, categorie, omschr, voorraad, laag_waarschuwing, inkoopeenheid, eenheden_per_inkoop, actief: true };
 
   await DB.upsertProduct(artikel);
   toonToast(`✓ ${naam} ${editIdx !== '' ? 'bijgewerkt' : 'toegevoegd'}`);
@@ -2813,6 +2826,8 @@ function bewerkArtikel(i) {
   document.getElementById('art-omschr').value = p.omschr || '';
   document.getElementById('art-voorraad').value = p.voorraad ?? '';
   document.getElementById('art-laag').value = p.laag_waarschuwing ?? '';
+  document.getElementById('art-inkoopeenheid').value = p.inkoopeenheid || '';
+  document.getElementById('art-eenheden-per-inkoop').value = p.eenheden_per_inkoop ?? '';
   document.getElementById('edit-index').value = i;
   document.querySelectorAll('.icoon-kies-btn').forEach(b => b.classList.toggle('actief', b.dataset.waarde === p.emoji));
   document.getElementById('artikel-form-titel').textContent = 'Artikel bewerken';
@@ -2850,6 +2865,8 @@ function resetArtikelForm() {
   document.getElementById('art-categorie').value = 'drank';
   document.getElementById('art-voorraad').value = '';
   document.getElementById('art-laag').value = '';
+  document.getElementById('art-inkoopeenheid').value = '';
+  document.getElementById('art-eenheden-per-inkoop').value = '';
   document.getElementById('edit-index').value = '';
   document.getElementById('artikel-form-titel').textContent = 'Nieuw artikel toevoegen';
   document.querySelectorAll('.icoon-kies-btn').forEach(b => b.classList.remove('actief'));
@@ -2862,41 +2879,52 @@ async function renderVoorraadAanvullen() {
     .filter(p => p.voorraad !== null && p.voorraad !== undefined && p.actief !== false)
     .sort((a, b) => (a.volgorde ?? 0) - (b.volgorde ?? 0));
 
-  document.getElementById('voorraad-lijst').innerHTML = trackedProducten.map(p => `
+  document.getElementById('voorraad-lijst').innerHTML = trackedProducten.map(p => {
+    const heeftInkoopEenheid = p.eenheden_per_inkoop && p.eenheden_per_inkoop > 1;
+    const eenheidLabel = p.inkoopeenheid || 'stuks';
+    return `
     <div class="artikel-rij">
       <span class="artikel-emoji">${p.emoji?.startsWith('/icons/') ? `<img src="${p.emoji}" style="width:1.6rem;height:1.6rem;object-fit:contain;vertical-align:middle">` : (p.emoji || '🛒')}</span>
       <div class="artikel-info">
         <div class="artikel-naam">${esc(p.naam)}</div>
+        ${heeftInkoopEenheid ? `<div class="artikel-omschr">1 ${esc(eenheidLabel)} = ${p.eenheden_per_inkoop}×</div>` : ''}
       </div>
       <span class="voorraad-nu">nu: <b>${p.voorraad}</b></span>
-      <input type="number" min="1" step="1" placeholder="aantal" class="voorraad-invoer" id="voorraad-invoer-${p.id}" onkeydown="if(event.key==='Enter')vulVoorraadAan('${p.id}')">
+      <input type="number" min="1" step="1" placeholder="${heeftInkoopEenheid ? 'aantal ' + esc(eenheidLabel) : 'aantal'}" class="voorraad-invoer" id="voorraad-invoer-${p.id}" onkeydown="if(event.key==='Enter')vulVoorraadAan('${p.id}')">
       <button class="opslaan-btn" style="padding:7px 14px;font-size:0.85rem" onclick="vulVoorraadAan('${p.id}')">+ Aanvullen</button>
     </div>
-  `).join('') || '<div style="color:var(--kr-muted);font-size:0.9rem;padding:8px">Geen artikelen met voorraadregistratie. Zet bij een artikel (via Beheer → Artikelen) een voorraadaantal in om het hier te kunnen aanvullen.</div>';
+  `;
+  }).join('') || '<div style="color:var(--kr-muted);font-size:0.9rem;padding:8px">Geen artikelen met voorraadregistratie. Zet bij een artikel (via Beheer → Artikelen) een voorraadaantal in om het hier te kunnen aanvullen.</div>';
 
   renderVoorraadLog();
 }
 
 async function vulVoorraadAan(productId) {
   const inp = document.getElementById('voorraad-invoer-' + productId);
-  const aantal = parseInt(inp.value);
-  if (!aantal || aantal <= 0) { toonToast('⚠️ Vul een aantal in'); return; }
+  const ingevoerdAantal = parseInt(inp.value);
+  if (!ingevoerdAantal || ingevoerdAantal <= 0) { toonToast('⚠️ Vul een aantal in'); return; }
 
   const product = producten.find(p => p.id === productId);
   if (!product) return;
 
-  const nieuweVoorraad = (product.voorraad || 0) + aantal;
+  const heeftInkoopEenheid = product.eenheden_per_inkoop && product.eenheden_per_inkoop > 1;
+  const toegevoegd = heeftInkoopEenheid ? ingevoerdAantal * product.eenheden_per_inkoop : ingevoerdAantal;
+  const nieuweVoorraad = (product.voorraad || 0) + toegevoegd;
   product.voorraad = nieuweVoorraad;
   await DB.upsertProduct(product);
   await DB.voegVoorraadLogToe({
     product_id: product.id,
     product_naam: product.naam,
-    aantal,
+    aantal: toegevoegd,
+    inkoop_aantal: heeftInkoopEenheid ? ingevoerdAantal : null,
+    inkoop_eenheid: heeftInkoopEenheid ? product.inkoopeenheid : null,
     nieuwe_voorraad: nieuweVoorraad,
     door: ingelogdeNaam,
   });
 
-  toonToast(`✓ ${aantal}x ${product.naam} bijgeboekt (nu ${nieuweVoorraad})`);
+  toonToast(heeftInkoopEenheid
+    ? `✓ ${ingevoerdAantal}× ${product.inkoopeenheid || 'inkoop'} = ${toegevoegd}x ${product.naam} bijgeboekt (nu ${nieuweVoorraad})`
+    : `✓ ${toegevoegd}x ${product.naam} bijgeboekt (nu ${nieuweVoorraad})`);
   await renderVoorraadAanvullen();
 }
 
@@ -2908,7 +2936,7 @@ async function renderVoorraadLog() {
     <tr>
       <td>${new Date(r.aangemaakt_op).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
       <td>${esc(r.product_naam)}</td>
-      <td>+${r.aantal}</td>
+      <td>${r.inkoop_aantal ? `${r.inkoop_aantal}× ${esc(r.inkoop_eenheid || '')} = +${r.aantal}` : `+${r.aantal}`}</td>
       <td>${r.nieuwe_voorraad}</td>
       <td>${esc(r.door || '—')}</td>
     </tr>
