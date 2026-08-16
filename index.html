@@ -2136,16 +2136,28 @@ function renderProducten() {
   });
   const volgorde = ['drank', 'ijs', 'eten', 'sauna', 'wasserette', 'overig'];
   const alleCategorieen = [...volgorde, ...Object.keys(groepen).filter(k => !volgorde.includes(k))].filter(c => groepen[c]?.length);
+  // Sauna en Wasmachine/droger nemen elk weinig ruimte in en horen inhoudelijk
+  // bij elkaar (terreinvoorzieningen), dus die tonen we naast elkaar i.p.v. onder elkaar.
+  const naastElkaar = ['sauna', 'wasserette'];
+
+  const categorieInhoudHTML = (cat) => `
+    <div style="font-size:0.75rem;font-weight:700;color:var(--kr-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;padding:0 2px">
+      ${CATEGORIE_EMOJIS[cat] || '📦'} ${CATEGORIE_LABELS[cat] || cat}
+    </div>
+    <div class="producten-grid">${groepen[cat].map(productKnopHTML).join('')}</div>`;
 
   document.getElementById('producten-rijen').innerHTML =
     `<div style="padding:10px 16px">` +
-    alleCategorieen.map(cat => `
-      <div style="margin-bottom:14px">
-        <div style="font-size:0.75rem;font-weight:700;color:var(--kr-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;padding:0 2px">
-          ${CATEGORIE_EMOJIS[cat] || '📦'} ${CATEGORIE_LABELS[cat] || cat}
-        </div>
-        <div class="producten-grid">${groepen[cat].map(productKnopHTML).join('')}</div>
-      </div>`).join('') +
+    alleCategorieen.map(cat => {
+      if (cat === 'wasserette' && alleCategorieen.includes('sauna')) return '';
+      if (cat === 'sauna') {
+        const paar = naastElkaar.filter(c => alleCategorieen.includes(c));
+        return `<div style="display:flex;gap:14px;margin-bottom:14px">${paar.map(c => `
+          <div style="flex:1;min-width:0">${categorieInhoudHTML(c)}</div>`).join('')}</div>`;
+      }
+      return `
+      <div style="margin-bottom:14px">${categorieInhoudHTML(cat)}</div>`;
+    }).join('') +
     `</div>`;
 }
 
