@@ -1512,7 +1512,7 @@
                 {src:'/icons/bal_gehakt.png', naam:'bal gehakt'},
                 {src:'/icons/broodje_bal_gehakt.png', naam:'broodje bal gehakt'},
               ];
-              const emoji = ['🍺','🍻','🥃','🍸','🍹','🧃','🥤','🍋','☕','🧋','🍵','🫗','🧊','💧','🍕','🍩','🍪','🍫','🍿','🥜','🍦','🚀','🛒','🧖','🧺'];
+              const emoji = ['🍺','🍻','🥃','🍸','🍹','🧃','🥤','🍋','☕','🧋','🍵','🫗','🧊','💧','🍕','🍩','🍪','🍫','🍿','🥜','🍦','🚀','🛒','🧖','🧺','🌀'];
               document.write(afb.map(a =>
                 `<button type="button" class="icoon-kies-btn" onclick="kiesIconImg('${a.src}')" title="${a.naam}" data-waarde="${a.src}">
                   <img src="${a.src}" style="width:44px;height:44px;object-fit:contain">
@@ -1535,8 +1535,8 @@
             <option value="drank">Drank</option>
             <option value="eten">Eten</option>
             <option value="ijs">Ijs</option>
-            <option value="sauna">Sauna</option>
             <option value="wasserette">Wasmachine / droger</option>
+            <option value="sauna">Sauna</option>
             <option value="overig">Overig</option>
           </select>
         </div>
@@ -1586,6 +1586,14 @@ let plekkenCache = {}; // plek_code → {plek_code}
 let bandjeNaarKoppeling = {}; // bandje_uid → {koppeling_type, koppeling_id}
 let koppelingNaarBandjes = {}; // koppeling_id → [bandje_uid, ...]
 
+// Weerspiegelt de instelling "Automatisch afboeken" uit de reserveringen-app
+// (die daar boekt bij een bevestigde saunareservering). Staat die aan, dan
+// mag een saunabezoek niet ook nog handmatig hier geboekt worden — anders
+// dubbel in rekening. Standaard (offline/onbereikbaar/nog nooit opgehaald)
+// bewust "uit" (fail-open): handmatig boeken blokkeren mag nooit de kassa
+// vastzetten als de reserveringen-app niet bereikbaar is.
+let saunaAutomatischActief = localStorage.getItem('sauna_automatisch_actief') === '1';
+
 const STANDAARD_GASTEN = {
   'A1B2': { naam: 'Jan de Vries', plek: 'HV3', openstaand: 0, beheerder: true },
   'C3D4': { naam: 'Lisa Smit',    plek: 'GV5', openstaand: 0, beheerder: false },
@@ -1593,9 +1601,31 @@ const STANDAARD_GASTEN = {
 };
 
 
+const RESERVERINGEN_API_URL = 'https://www.re-fective.nl';
+
+/** Haalt op of automatisch afboeken van saunabezoeken aan staat in de
+ *  reserveringen-app en cachet het resultaat in localStorage — best-effort,
+ *  faalt stil (blijft bij de laatst bekende/standaardwaarde) als de
+ *  reserveringen-app niet bereikbaar is (bv. geen internet op locatie). */
+async function laadSaunaInstelling() {
+  try {
+    const res = await fetch(`${RESERVERINGEN_API_URL}/api/kassa/sauna-automatisch-actief`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    saunaAutomatischActief = !!data.actief;
+    localStorage.setItem('sauna_automatisch_actief', saunaAutomatischActief ? '1' : '0');
+    if (typeof renderProducten === 'function') renderProducten();
+  } catch {
+    // Offline of onbereikbaar — laatst bekende (of standaard) waarde blijft gelden.
+  }
+}
+window.addEventListener('online', laadSaunaInstelling);
+setInterval(() => { if (navigator.onLine) laadSaunaInstelling(); }, 60000);
+
 async function init() {
   // Laad Supabase → IndexedDB (als online)
   await laadVanSupabase();
+  laadSaunaInstelling();
 
   // Laad in-memory cache vanuit IndexedDB
   const ledenArr = await DB.getLeden();
@@ -2110,21 +2140,27 @@ function productKnopHTML(p) {
   const beschikbaar = heeftVoorraad ? p.voorraad - inWagen : Infinity;
   const uitverkocht = beschikbaar <= 0;
   const laag = heeftVoorraad && !uitverkocht && p.voorraad <= (p.laag_waarschuwing || 0);
+  // Staat "automatisch afboeken" aan in de reserveringen-app, dan wordt een
+  // saunabezoek uitsluitend via de reservering zelf geboekt (voorkomt dubbel
+  // in rekening brengen) — handmatig boeken in de kassa is dan geblokkeerd.
+  const saunaGeblokkeerd = p.categorie === 'sauna' && saunaAutomatischActief;
+  const geblokkeerd = uitverkocht || saunaGeblokkeerd;
   const id = p.naam.replace(/\s/g, '');
-  return `<button class="product-btn" data-productnaam="${p.naam}" ${uitverkocht ? 'disabled' : ''} onclick="voegToe('${p.naam}', ${p.prijs})"
-    style="${uitverkocht ? 'opacity:0.45;cursor:not-allowed' : ''}">
+  return `<button class="product-btn" data-productnaam="${p.naam}" ${geblokkeerd ? 'disabled' : ''} onclick="voegToe('${p.naam}', ${p.prijs})"
+    style="${geblokkeerd ? 'opacity:0.45;cursor:not-allowed' : ''}">
     ${p.emoji?.startsWith('/icons/') ? `<img src="${p.emoji}" style="width:2.2rem;height:2.2rem;object-fit:contain">` : `<span class="emoji">${p.emoji || '🛒'}</span>`}
     <span class="pnaam">${p.naam}</span>
     <span class="pprijs">€${Number(p.prijs).toFixed(2).replace('.', ',')}</span>
+    ${saunaGeblokkeerd ? `<span style="font-size:0.7rem;color:#e67e22;text-align:center">Alleen via reservering</span>` : ''}
     ${heeftVoorraad ? `<span style="font-size:0.75rem;color:${uitverkocht ? '#e74c3c' : laag ? '#e67e22' : 'var(--kr-muted)'}">
       ${uitverkocht ? 'Uitverkocht' : `Nog ${beschikbaar}`}</span>` : ''}
     <span class="badge ${inWagen > 0 ? 'zichtbaar' : ''}" id="badge-${id}">${inWagen}</span>
   </button>`;
 }
 
-const CATEGORIE_LABELS = { drank: 'Drank', eten: 'Eten', ijs: 'Ijs', sauna: 'Sauna', wasserette: 'Wasmachine / droger', overig: 'Overig' };
+const CATEGORIE_LABELS = { drank: 'Drank', eten: 'Eten', ijs: 'Ijs', wasserette: 'Wasmachine / droger', sauna: 'Sauna', overig: 'Overig' };
 
-const CATEGORIE_EMOJIS = { drank: '🍺', eten: '🍔', ijs: '🍦', sauna: '🧖', wasserette: '🧺', overig: '📦' };
+const CATEGORIE_EMOJIS = { drank: '🍺', eten: '🍔', ijs: '🍦', wasserette: '🧺', sauna: '🧖', overig: '📦' };
 
 function renderProducten() {
   const actief = producten.filter(p => p.actief !== false).sort((a,b) => (a.volgorde||0) - (b.volgorde||0));
@@ -2134,30 +2170,20 @@ function renderProducten() {
     if (!groepen[cat]) groepen[cat] = [];
     groepen[cat].push(p);
   });
-  const volgorde = ['drank', 'ijs', 'eten', 'sauna', 'wasserette', 'overig'];
+  // Wasmachine/droger staat bewust vóór Sauna: die volgorde bepaalt hier ook
+  // de weergavevolgorde op het tapscherm (Sauna dus steeds ónder Wasmachine).
+  const volgorde = ['drank', 'ijs', 'eten', 'wasserette', 'sauna', 'overig'];
   const alleCategorieen = [...volgorde, ...Object.keys(groepen).filter(k => !volgorde.includes(k))].filter(c => groepen[c]?.length);
-  // Sauna en Wasmachine/droger nemen elk weinig ruimte in en horen inhoudelijk
-  // bij elkaar (terreinvoorzieningen), dus die tonen we naast elkaar i.p.v. onder elkaar.
-  const naastElkaar = ['sauna', 'wasserette'];
-
-  const categorieInhoudHTML = (cat) => `
-    <div style="font-size:0.75rem;font-weight:700;color:var(--kr-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;padding:0 2px">
-      ${CATEGORIE_EMOJIS[cat] || '📦'} ${CATEGORIE_LABELS[cat] || cat}
-    </div>
-    <div class="producten-grid">${groepen[cat].map(productKnopHTML).join('')}</div>`;
 
   document.getElementById('producten-rijen').innerHTML =
     `<div style="padding:10px 16px">` +
-    alleCategorieen.map(cat => {
-      if (cat === 'wasserette' && alleCategorieen.includes('sauna')) return '';
-      if (cat === 'sauna') {
-        const paar = naastElkaar.filter(c => alleCategorieen.includes(c));
-        return `<div style="display:flex;gap:14px;margin-bottom:14px">${paar.map(c => `
-          <div style="flex:1;min-width:0">${categorieInhoudHTML(c)}</div>`).join('')}</div>`;
-      }
-      return `
-      <div style="margin-bottom:14px">${categorieInhoudHTML(cat)}</div>`;
-    }).join('') +
+    alleCategorieen.map(cat => `
+      <div style="margin-bottom:14px">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--kr-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;padding:0 2px">
+          ${CATEGORIE_EMOJIS[cat] || '📦'} ${CATEGORIE_LABELS[cat] || cat}
+        </div>
+        <div class="producten-grid">${groepen[cat].map(productKnopHTML).join('')}</div>
+      </div>`).join('') +
     `</div>`;
 }
 
