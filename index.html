@@ -2048,6 +2048,26 @@ function bouwBandjesCaches(bandjesArr) {
   });
 }
 
+/** Haalt bij het scannen het actuele openstaand-saldo op uit Supabase i.p.v.
+ *  te vertrouwen op de lokale IndexedDB-cache, die alleen bij het opstarten
+ *  van de app wordt ververst — anders blijft een saldowijziging die buiten
+ *  deze kassa-instantie om gebeurde (bv. een automatisch geboekt
+ *  saunabezoek vanuit de reserveringen-app) onzichtbaar tot een herstart.
+ *  Best-effort: faalt stil bij geen verbinding, dan blijft de cache leidend. */
+async function verversOpenstaandBijScan(uid) {
+  if (!navigator.onLine) return;
+  try {
+    const { data, error } = await supa.from('leden').select('openstaand').eq('uid', uid).maybeSingle();
+    if (error || !data) return;
+    const gast = gasten[uid];
+    if (gast && Number(gast.openstaand || 0) !== Number(data.openstaand)) {
+      gast.openstaand = data.openstaand;
+      await DB.upsertLid(gast);
+      if (huidigeBandje === uid) updateOpenstaand();
+    }
+  } catch {}
+}
+
 async function scanBandje(bandje_uid) {
   const nu = Date.now();
   if (nu - _laatsteNfcScan < 2000) return; // debounce 2 seconden
@@ -2078,6 +2098,7 @@ async function scanBandje(bandje_uid) {
       geluidScan();
       toonScherm('producten');
       haalGastNaamOp(plek_code, lid_uid);
+      verversOpenstaandBijScan(lid_uid);
       return;
     }
     if (koppeling.koppeling_type === 'lid') {
@@ -2092,6 +2113,7 @@ async function scanBandje(bandje_uid) {
       geluidScan();
       toonScherm('producten');
       if (!gast.pincode) openStelPinModal(false);
+      verversOpenstaandBijScan(lid_uid);
       return;
     }
   }
@@ -2107,6 +2129,7 @@ async function scanBandje(bandje_uid) {
   geluidScan();
   toonScherm('producten');
   if (!gast.pincode) openStelPinModal(false);
+  verversOpenstaandBijScan(bandje_uid);
 }
 
 // Achtergrond: haal huidige gastnaam op via edge function
