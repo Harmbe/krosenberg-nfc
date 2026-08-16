@@ -1535,6 +1535,8 @@
             <option value="drank">Drank</option>
             <option value="eten">Eten</option>
             <option value="ijs">Ijs</option>
+            <option value="sauna">Sauna</option>
+            <option value="wasserette">Wasmachine / droger</option>
             <option value="overig">Overig</option>
           </select>
         </div>
@@ -2120,9 +2122,9 @@ function productKnopHTML(p) {
   </button>`;
 }
 
-const CATEGORIE_LABELS = { drank: 'Drank', eten: 'Eten', ijs: 'Ijs', overig: 'Overig' };
+const CATEGORIE_LABELS = { drank: 'Drank', eten: 'Eten', ijs: 'Ijs', sauna: 'Sauna', wasserette: 'Wasmachine / droger', overig: 'Overig' };
 
-const CATEGORIE_EMOJIS = { drank: '🍺', eten: '🍔', ijs: '🍦', overig: '📦' };
+const CATEGORIE_EMOJIS = { drank: '🍺', eten: '🍔', ijs: '🍦', sauna: '🧖', wasserette: '🧺', overig: '📦' };
 
 function renderProducten() {
   const actief = producten.filter(p => p.actief !== false).sort((a,b) => (a.volgorde||0) - (b.volgorde||0));
@@ -2132,7 +2134,7 @@ function renderProducten() {
     if (!groepen[cat]) groepen[cat] = [];
     groepen[cat].push(p);
   });
-  const volgorde = ['drank', 'ijs', 'eten', 'overig'];
+  const volgorde = ['drank', 'ijs', 'eten', 'sauna', 'wasserette', 'overig'];
   const alleCategorieen = [...volgorde, ...Object.keys(groepen).filter(k => !volgorde.includes(k))].filter(c => groepen[c]?.length);
 
   document.getElementById('producten-rijen').innerHTML =
