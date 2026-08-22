@@ -1404,6 +1404,9 @@
         <input type="text" id="printer-url" placeholder="http://192.168.1.x:5000"
           style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--kr-leem);border-radius:8px;font-size:0.9rem"
           oninput="slaaPrinterUrlOp(this.value)">
+        <input type="password" id="printer-sleutel" placeholder="Printserver-sleutel"
+          style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--kr-leem);border-radius:8px;font-size:0.9rem"
+          oninput="slaaPrinterSleutelOp(this.value)">
         <button onclick="testPrint()" style="padding:8px 14px;background:var(--kr-forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem">Testbon</button>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
@@ -1877,7 +1880,7 @@ async function toonRekening(uid) {
         const open = r.geregistreerd_op > grensTs;
         return `<tr>
           <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
-          <td>${r.omschrijving}</td>
+          <td>${esc(r.omschrijving)}</td>
           <td>€${Number(r.totaal).toFixed(2).replace('.', ',')}</td>
           <td style="color:${open ? '#e67e22' : '#27ae60'};font-weight:600">${open ? 'Open' : 'Voldaan'}</td>
         </tr>`;
@@ -2215,11 +2218,11 @@ function productKnopHTML(p) {
   // in rekening brengen) — handmatig boeken in de kassa is dan geblokkeerd.
   const saunaGeblokkeerd = p.categorie === 'sauna' && saunaAutomatischActief;
   const geblokkeerd = uitverkocht || saunaGeblokkeerd;
-  const id = p.naam.replace(/\s/g, '');
-  return `<button class="product-btn" data-productnaam="${p.naam}" ${geblokkeerd ? 'disabled' : ''} onclick="voegToe('${p.naam}', ${p.prijs})"
+  const id = p.naam.replace(/[^a-zA-Z0-9_-]/g, '');
+  return `<button class="product-btn" data-productnaam="${esc(p.naam)}" ${geblokkeerd ? 'disabled' : ''} onclick="voegToe(this.dataset.productnaam, ${p.prijs})"
     style="${geblokkeerd ? 'opacity:0.45;cursor:not-allowed' : ''}">
-    ${p.emoji?.startsWith('/icons/') ? `<img src="${p.emoji}" style="width:2.2rem;height:2.2rem;object-fit:contain">` : `<span class="emoji">${p.emoji || '🛒'}</span>`}
-    <span class="pnaam">${p.naam}</span>
+    ${p.emoji?.startsWith('/icons/') ? `<img src="${esc(p.emoji)}" style="width:2.2rem;height:2.2rem;object-fit:contain">` : `<span class="emoji">${esc(p.emoji) || '🛒'}</span>`}
+    <span class="pnaam">${esc(p.naam)}</span>
     <span class="pprijs">€${Number(p.prijs).toFixed(2).replace('.', ',')}</span>
     ${saunaGeblokkeerd ? `<span style="font-size:0.7rem;color:#e67e22;text-align:center">Alleen via reservering</span>` : ''}
     ${heeftVoorraad ? `<span style="font-size:0.75rem;color:${uitverkocht ? '#e74c3c' : laag ? '#e67e22' : 'var(--kr-muted)'}">
@@ -2276,7 +2279,7 @@ function renderWinkelwagen() {
   wwItems.style.display = items.length === 0 ? 'none' : 'flex';
 
   wwItems.innerHTML = items.map(([naam, v]) =>
-    `<span class="ww-item">${v.aantal}× ${naam} <span class="ww-prijs">€${(v.prijs * v.aantal).toFixed(2).replace('.', ',')}</span></span>`
+    `<span class="ww-item">${esc(v.aantal)}× ${esc(naam)} <span class="ww-prijs">€${(v.prijs * v.aantal).toFixed(2).replace('.', ',')}</span></span>`
   ).join('') + (items.length > 0 ? `<span class="ww-totaal">Totaal: €${totaal.toFixed(2).replace('.', ',')}</span>` : '');
 
   const btn = document.getElementById('bevestig-btn');
@@ -2337,6 +2340,14 @@ function slaaPrinterUrlOp(url) {
   localStorage.setItem('printer_url', url.trim());
 }
 
+function getPrinterSleutel() {
+  return localStorage.getItem('printer_sleutel') || '';
+}
+
+function slaaPrinterSleutelOp(sleutel) {
+  localStorage.setItem('printer_sleutel', sleutel.trim());
+}
+
 function slaaAutoPrintOp(aan) {
   localStorage.setItem('auto_print', aan ? '1' : '0');
 }
@@ -2351,7 +2362,7 @@ async function printBon(data) {
   try {
     const r = await fetch(url + '/print', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Printserver-Sleutel': getPrinterSleutel() },
       body: JSON.stringify(data),
     });
     const res = await r.json();
@@ -2365,7 +2376,7 @@ async function testPrint() {
   const statusEl = document.getElementById('printer-status');
   statusEl.textContent = 'Testbon versturen…';
   try {
-    const r = await fetch(url + '/testprint', { method: 'POST' });
+    const r = await fetch(url + '/testprint', { method: 'POST', headers: { 'X-Printserver-Sleutel': getPrinterSleutel() } });
     const res = await r.json();
     statusEl.textContent = res.ok ? '✓ Testbon geprint' : '✗ Fout: ' + res.fout;
   } catch {
@@ -2457,6 +2468,8 @@ async function renderBeheer() {
   renderPlekkenLijst();
   const printerInput = document.getElementById('printer-url');
   if (printerInput) printerInput.value = getPrinterUrl();
+  const printerSleutelInput = document.getElementById('printer-sleutel');
+  if (printerSleutelInput) printerSleutelInput.value = getPrinterSleutel();
   const autoPrintToggle = document.getElementById('auto-print-toggle');
   if (autoPrintToggle) autoPrintToggle.checked = getAutoPrint();
   await updateSyncBadge();
@@ -2535,7 +2548,7 @@ async function openBetaalscherm() {
                        d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
           return `<tr>
             <td style="padding:5px 6px;border-bottom:1px solid #f0ede6;white-space:nowrap;color:var(--kr-muted);font-size:0.78rem">${tijd}</td>
-            <td style="padding:5px 6px;border-bottom:1px solid #f0ede6">${r.omschrijving}</td>
+            <td style="padding:5px 6px;border-bottom:1px solid #f0ede6">${esc(r.omschrijving)}</td>
             <td style="padding:5px 6px;border-bottom:1px solid #f0ede6;text-align:right;font-weight:600;color:var(--kr-accent);white-space:nowrap">€${Number(r.totaal).toFixed(2).replace('.', ',')}</td>
           </tr>`;
         }).join('')}</tbody>
@@ -2755,10 +2768,10 @@ async function renderArtikelLijst() {
         <button class="icon-btn" style="padding:2px 6px;font-size:0.8rem" onclick="verschuifArtikel(${i},-1)" ${i===0?'disabled':''} title="Omhoog">▲</button>
         <button class="icon-btn" style="padding:2px 6px;font-size:0.8rem" onclick="verschuifArtikel(${i},1)" ${i===producten.length-1?'disabled':''} title="Omlaag">▼</button>
       </div>
-      <span class="artikel-emoji">${p.emoji?.startsWith('/icons/') ? `<img src="${p.emoji}" style="width:1.6rem;height:1.6rem;object-fit:contain;vertical-align:middle">` : (p.emoji || '🛒')}</span>
+      <span class="artikel-emoji">${p.emoji?.startsWith('/icons/') ? `<img src="${esc(p.emoji)}" style="width:1.6rem;height:1.6rem;object-fit:contain;vertical-align:middle">` : esc(p.emoji || '🛒')}</span>
       <div class="artikel-info">
-        <div class="artikel-naam">${p.naam} <span style="font-size:0.75rem;color:var(--kr-muted);font-weight:400">${p.categorie || ''}</span></div>
-        ${p.omschr ? `<div class="artikel-omschr">${p.omschr}</div>` : ''}
+        <div class="artikel-naam">${esc(p.naam)} <span style="font-size:0.75rem;color:var(--kr-muted);font-weight:400">${esc(p.categorie || '')}</span></div>
+        ${p.omschr ? `<div class="artikel-omschr">${esc(p.omschr)}</div>` : ''}
       </div>
       <span class="artikel-prijs">€${Number(p.prijs).toFixed(2).replace('.', ',')}</span>
       ${p.voorraad !== '' && p.voorraad !== undefined

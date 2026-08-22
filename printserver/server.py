@@ -7,10 +7,32 @@ Ontvangt bonnen van de tablet-app en stuurt ze naar de thermische USB-printer.
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import escpos.printer as escpos
-import datetime, os, sys
+import datetime, hmac, os, sys
 
 app = Flask(__name__)
-CORS(app)  # staat verzoeken toe vanuit de tablet-browser
+
+# Herkomst waarvandaan de tablet-app (Fully Kiosk) verzoeken mag sturen. Staat
+# standaard nog open (*) zodat een bestaande installatie na deze update blijft
+# werken — de sleutel hieronder is de eigenlijke toegangscontrole. Zet
+# PRINTSERVER_ALLOWED_ORIGIN op de domeinnaam van de kassa-app voor extra
+# verharding.
+ALLOWED_ORIGIN = os.environ.get('PRINTSERVER_ALLOWED_ORIGIN', '*')
+CORS(app, origins=[ALLOWED_ORIGIN])
+
+# Gedeelde sleutel tussen tablet-app en printserver. Zonder deze sleutel kan
+# elk apparaat op hetzelfde wifi-netwerk bonnen laten printen of de
+# printerstatus opvragen — de server start daarom bewust niet zonder.
+PRINTSERVER_SLEUTEL = os.environ.get('PRINTSERVER_SLEUTEL')
+if not PRINTSERVER_SLEUTEL:
+    sys.exit('PRINTSERVER_SLEUTEL ontbreekt. Zet deze env var (zelfde waarde als '
+             'het veld "Printserver-sleutel" in de kassa-app) voordat je de '
+             'printserver start.')
+
+@app.before_request
+def vereis_sleutel():
+    aangeboden = request.headers.get('X-Printserver-Sleutel', '')
+    if not hmac.compare_digest(aangeboden, PRINTSERVER_SLEUTEL):
+        return jsonify({'ok': False, 'fout': 'Ongeldige of ontbrekende printserver-sleutel'}), 401
 
 # USB-printerpad — pas aan als de Pi een ander pad toont (zie README)
 PRINTER_DEV = os.environ.get('PRINTER_DEV', '/dev/usb/lp0')

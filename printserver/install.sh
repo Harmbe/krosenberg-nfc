@@ -19,7 +19,16 @@ pip install -q -r requirements.txt
 sudo usermod -aG lp "$USER"
 echo "Printerrechten ingesteld voor gebruiker: $USER"
 
-# 4. Systemd-service aanmaken zodat de server automatisch start
+# 4. Gedeelde sleutel genereren (alleen als die nog niet bestaat, zodat een
+#    herinstallatie niet steeds opnieuw alle tablets ontkoppelt)
+ENV_FILE="$(pwd)/.env"
+if [ ! -f "$ENV_FILE" ]; then
+  echo "PRINTSERVER_SLEUTEL=$(openssl rand -hex 24)" > "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+fi
+PRINTSERVER_SLEUTEL="$(grep '^PRINTSERVER_SLEUTEL=' "$ENV_FILE" | cut -d= -f2)"
+
+# 5. Systemd-service aanmaken zodat de server automatisch start
 SERVICE_FILE=/etc/systemd/system/krosenberg-print.service
 WORK_DIR="$(pwd)"
 
@@ -34,6 +43,7 @@ WorkingDirectory=$WORK_DIR
 Restart=always
 User=$USER
 Environment=PRINTER_DEV=/dev/usb/lp0
+EnvironmentFile=$ENV_FILE
 
 [Install]
 WantedBy=multi-user.target
@@ -52,5 +62,10 @@ echo "Controleer status:  sudo systemctl status krosenberg-print"
 echo "Logs bekijken:      sudo journalctl -u krosenberg-print -f"
 echo ""
 echo "Vul dit IP-adres in bij Beheer > Printer instellen in de tablet-app."
+echo "Vul ook deze printserver-sleutel in bij hetzelfde scherm (op elke tablet):"
+echo ""
+echo "  $PRINTSERVER_SLEUTEL"
+echo ""
+echo "Zonder deze sleutel weigert de printserver alle verzoeken."
 echo ""
 echo "LET OP: log opnieuw in (of herstart) zodat printerrechten actief worden."
