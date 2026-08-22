@@ -129,6 +129,22 @@ function updateStatusBadge() {
   el.style.color  = isOnline ? '#27ae60' : '#e74c3c';
 }
 
+// Vangnet naast de online/offline-events hierboven: die vuren niet altijd
+// betrouwbaar (bv. na een wifi-herverbinding of korte hapering), waardoor
+// isOnline voor onbepaalde tijd op "offline" kon blijven staan terwijl er
+// allang weer verbinding was — met als gevolg dat nieuwe transacties
+// permanent in de wachtrij bleven i.p.v. direct te worden weggeschreven.
+// Elke 15 seconden isOnline verse aftoetsen tegen navigator.onLine corrigeert
+// dat vanzelf, zonder te wachten op een pagina-herlaad.
+setInterval(() => {
+  const echt = navigator.onLine;
+  if (echt !== isOnline) {
+    isOnline = echt;
+    updateStatusBadge();
+    if (isOnline) syncWachtrij();
+  }
+}, 15000);
+
 // ── Hulpfunctie: schrijf naar lokaal + sync-wachtrij + eventueel Supabase ─────
 async function schrijf(tabel, actie, data) {
   // 1. Lokaal opslaan

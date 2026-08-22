@@ -3162,6 +3162,11 @@ async function verwijderPlek(plek_code) {
 }
 
 async function forceerSync() {
+  // Verse aftoetsen i.p.v. blind op de (mogelijk verouderde) isOnline-vlag
+  // vertrouwen — dit is een expliciete handmatige actie, die mag nooit
+  // weigeren terwijl er in werkelijkheid allang weer verbinding is.
+  isOnline = navigator.onLine;
+  updateStatusBadge();
   if (!isOnline) { toonToast('⚠️ Geen internet'); return; }
   toonToast('Synchroniseren…');
   await syncWachtrij();
