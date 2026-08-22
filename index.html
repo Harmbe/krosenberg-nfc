@@ -3581,6 +3581,13 @@ async function voerSetupUit() {
   invoer.disabled = true;
   try {
     await activeerApparaat(invoer.value.trim());
+
+    // Tijdelijke diagnose: direct na activeren controleren of er echt iets is
+    // weggeschreven, vóórdat een herstart kan aantonen of het weer verdwijnt.
+    const backupNaActivatie = localStorage.getItem('kr_kassa_tokens');
+    const { data: { session: sessieNaActivatie } } = await supa.auth.getSession();
+    toonToast(`⚠️ Na activeren: backup=${backupNaActivatie ? 'aanwezig' : 'ONTBREEKT'}, getSession=${sessieNaActivatie ? 'aanwezig' : 'ONTBREEKT'}`);
+
     document.getElementById('setup-overlay').style.display = 'none';
     await laadVanSupabase();
     await init();
