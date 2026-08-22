@@ -3553,7 +3553,7 @@ async function verstuurOverzichtEmail(plekCode, email, naam, perDagArr, van, tot
   </div>
 </div>
 <!-- ── Setup-scherm (eenmalig bij eerste gebruik van dit apparaat) ──────────── -->
-<div id="setup-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--kr-forest);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;padding:32px">
+<div id="setup-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--kr-forest);align-items:center;justify-content:center;flex-direction:column;gap:20px;padding:32px">
   <div style="color:var(--kr-sand);font-size:1.4rem;font-weight:700;letter-spacing:.5px">🌿 Krösenberg Kassa</div>
   <div style="color:var(--kr-leem);font-size:.9rem;text-align:center;max-width:320px">Dit apparaat is nog niet geactiveerd. Voer de setup-sleutel in om door te gaan.</div>
   <input id="setup-sleutel-invoer" type="password" placeholder="Setup-sleutel"
@@ -3581,15 +3581,6 @@ async function voerSetupUit() {
   invoer.disabled = true;
   try {
     await activeerApparaat(invoer.value.trim());
-
-    // Tijdelijke diagnose: direct na activeren controleren of er echt iets is
-    // weggeschreven, vóórdat een herstart kan aantonen of het weer verdwijnt.
-    // alert() i.p.v. toonToast(): die laatste bleek onzichtbaar te blijven
-    // achter het nog zichtbare setup-scherm (lagere z-index).
-    const backupNaActivatie = localStorage.getItem('kr_kassa_tokens');
-    const { data: { session: sessieNaActivatie } } = await supa.auth.getSession();
-    alert(`Na activeren: backup=${backupNaActivatie ? 'aanwezig' : 'ONTBREEKT'}, getSession=${sessieNaActivatie ? 'aanwezig' : 'ONTBREEKT'}`);
-
     document.getElementById('setup-overlay').style.display = 'none';
     await laadVanSupabase();
     await init();
