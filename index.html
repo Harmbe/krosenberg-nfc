@@ -1823,25 +1823,44 @@ function vereisLogin(scherm) {
 async function controleerPin() {
   if (_pinPogingen >= 5) { document.getElementById('pin-fout').textContent = 'Te veel pogingen. Wacht 30 seconden.'; return; }
   const invoer = document.getElementById('pin-invoer').value;
-  const beheerders = Object.values(gasten).filter(g => g.beheerder && g.pincode);
-  const matchendeBeheerder = beheerders.find(g => invoer === String(g.pincode));
-  const correct = beheerders.length > 0 ? !!matchendeBeheerder : invoer === '1234';
-  if (correct) {
-    _pinPogingen = 0;
-    ingelogd = true;
-    ingelogdeNaam = matchendeBeheerder ? matchendeBeheerder.naam : null;
-    _sessieTimeout = setTimeout(() => { ingelogd = false; ingelogdeNaam = null; document.body.classList.remove('ingelogd'); document.getElementById('uitloggen-btn').style.display='none'; toonScherm('tap'); toonToast('Sessie verlopen — automatisch uitgelogd'); }, 5 * 60 * 1000);
-    document.body.classList.add('ingelogd');
-    document.getElementById('uitloggen-btn').style.display = '';
-    document.querySelectorAll('.admin-tab').forEach(t => t.style.opacity = '1');
-    sluitPinModal();
-    toonScherm(doelScherm);
-  } else {
-    _pinPogingen++;
-    document.getElementById('pin-fout').textContent = `Verkeerde pincode (${_pinPogingen}/5)`;
+  document.getElementById('pin-fout').textContent = 'Controleren…';
+
+  let naam = null;
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/controleer-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + (session?.access_token || SUPABASE_KEY),
+      },
+      body: JSON.stringify({ pin: invoer }),
+    });
+    if (!res.ok) {
+      _pinPogingen++;
+      document.getElementById('pin-fout').textContent = `Verkeerde pincode (${_pinPogingen}/5)`;
+      _pinReset('pin-invoer');
+      if (_pinPogingen >= 5) setTimeout(() => { _pinPogingen = 0; }, 30000);
+      return;
+    }
+    const data = await res.json();
+    naam = data.naam || null;
+  } catch (e) {
+    document.getElementById('pin-fout').textContent = 'Verbindingsfout — probeer opnieuw';
     _pinReset('pin-invoer');
-    if (_pinPogingen >= 5) setTimeout(() => { _pinPogingen = 0; }, 30000);
+    return;
   }
+
+  _pinPogingen = 0;
+  ingelogd = true;
+  ingelogdeNaam = naam;
+  _sessieTimeout = setTimeout(() => { ingelogd = false; ingelogdeNaam = null; document.body.classList.remove('ingelogd'); document.getElementById('uitloggen-btn').style.display='none'; toonScherm('tap'); toonToast('Sessie verlopen — automatisch uitgelogd'); }, 5 * 60 * 1000);
+  document.body.classList.add('ingelogd');
+  document.getElementById('uitloggen-btn').style.display = '';
+  document.querySelectorAll('.admin-tab').forEach(t => t.style.opacity = '1');
+  sluitPinModal();
+  toonScherm(doelScherm);
 }
 
 async function toonRekening(uid) {
@@ -2975,7 +2994,7 @@ function _volgendeToast() {
 }
 
 // ── Opstarten ─────────────────────────────────────────────────────────────────
-init().catch(console.error);
+// Verplaatst naar het einde van </body> zodat toonSetupScherm() al gedeclareerd is.
 
 // ── Geluiden via Web Audio API ───────────────────────────────────────────────
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -3499,5 +3518,49 @@ async function verstuurOverzichtEmail(plekCode, email, naam, perDagArr, van, tot
     <div id="plek-detail-log"></div>
   </div>
 </div>
+<!-- ── Setup-scherm (eenmalig bij eerste gebruik van dit apparaat) ──────────── -->
+<div id="setup-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--kr-forest);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;padding:32px">
+  <div style="color:var(--kr-sand);font-size:1.4rem;font-weight:700;letter-spacing:.5px">🌿 Krösenberg Kassa</div>
+  <div style="color:var(--kr-leem);font-size:.9rem;text-align:center;max-width:320px">Dit apparaat is nog niet geactiveerd. Voer de setup-sleutel in om door te gaan.</div>
+  <input id="setup-sleutel-invoer" type="password" placeholder="Setup-sleutel"
+    style="width:280px;padding:12px 16px;border-radius:10px;border:2px solid var(--kr-accent);background:var(--kr-cream);font-size:1rem;outline:none;text-align:center"
+    onkeydown="if(event.key==='Enter')voerSetupUit()">
+  <button onclick="voerSetupUit()"
+    style="width:280px;padding:12px;border-radius:10px;border:none;background:var(--kr-accent);color:white;font-size:1rem;font-weight:600;cursor:pointer">
+    Apparaat activeren
+  </button>
+  <div id="setup-fout" style="color:#ff8a80;font-size:.85rem;min-height:1.2em;text-align:center"></div>
+</div>
+
+<script>
+function toonSetupScherm() {
+  document.getElementById('setup-overlay').style.display = 'flex';
+}
+
+async function voerSetupUit() {
+  const invoer = document.getElementById('setup-sleutel-invoer');
+  const fout   = document.getElementById('setup-fout');
+  fout.textContent = '';
+  invoer.disabled = true;
+  try {
+    await activeerApparaat(invoer.value.trim());
+    document.getElementById('setup-overlay').style.display = 'none';
+    await laadVanSupabase();
+    await init();
+  } catch (e) {
+    fout.textContent = 'Activering mislukt: ' + (e.message || 'controleer de sleutel');
+  } finally {
+    invoer.disabled = false;
+    invoer.value = '';
+  }
+}
+</script>
+<script>
+// Opstarten — hier staan alle functies (inclusief toonSetupScherm) al klaar.
+(async () => {
+  const sessieOk = await initSessie();
+  if (sessieOk) await init().catch(console.error);
+})();
+</script>
 </body>
 </html>
