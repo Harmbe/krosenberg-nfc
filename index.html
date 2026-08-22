@@ -2036,10 +2036,6 @@ function zelfSelecteer() {
     document.getElementById('zelf-fout').textContent = 'Gasten kunnen alleen met een NFC-bandje bestellen';
     return;
   }
-  if (!gast.pincode) {
-    selecteerLid(uid);
-    return;
-  }
   gastPinUid = uid;
   document.getElementById('gast-pin-uitleg').textContent = `Voer de pincode in voor plek ${gast.plek} (${gast.naam})`;
   _pinReset('gast-pin-invoer');
@@ -2048,20 +2044,41 @@ function zelfSelecteer() {
   document.getElementById('gast-pin-modal').classList.add('open');
 }
 
-function controleerGastPin() {
-  if (_gastPinPogingen >= 5) { document.getElementById('gast-pin-fout').textContent = 'Te veel pogingen. Probeer later opnieuw.'; return; }
+async function controleerGastPin() {
+  if (_gastPinPogingen >= 5) { document.getElementById('gast-pin-fout').textContent = 'Te veel pogingen. Wacht 30 seconden.'; return; }
   const invoer = document.getElementById('gast-pin-invoer').value.trim();
   const uid = gastPinUid;
-  const gast = gasten[uid];
-  if (invoer === String(gast.pincode).trim()) {
-    _gastPinPogingen = 0;
-    sluitGastPinModal();
-    selecteerLid(uid);
-  } else {
+  const fout = document.getElementById('gast-pin-fout');
+  fout.textContent = 'Controleren…';
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/controleer-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + (session?.access_token || SUPABASE_KEY),
+      },
+      body: JSON.stringify({ uid, pin: invoer }),
+    });
+    if (res.ok) {
+      _gastPinPogingen = 0;
+      sluitGastPinModal();
+      selecteerLid(uid);
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (data.geenPincode) {
+      fout.textContent = 'Geen pincode ingesteld — vraag de beheerder';
+      return;
+    }
     _gastPinPogingen++;
-    document.getElementById('gast-pin-fout').textContent = `Verkeerde pincode (${_gastPinPogingen}/5)`;
+    fout.textContent = `Verkeerde pincode (${_gastPinPogingen}/5)`;
     _pinReset('gast-pin-invoer');
     if (_gastPinPogingen >= 5) setTimeout(() => { _gastPinPogingen = 0; }, 30000);
+  } catch (e) {
+    fout.textContent = 'Verbindingsfout — probeer opnieuw';
+    _pinReset('gast-pin-invoer');
   }
 }
 
