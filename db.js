@@ -92,6 +92,7 @@ async function initSessie() {
 
   if (session) return true;
   console.warn('[initSessie] geen geldige sessie:', diagnose);
+  alert('initSessie diagnose: ' + diagnose);
   if (typeof toonSetupScherm === 'function') toonSetupScherm(diagnose);
   return false;
 }
