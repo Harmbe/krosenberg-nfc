@@ -48,18 +48,32 @@ db.version(4).stores({
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ── Apparaat-sessie ────────────────────────────────────────────────────────────
-// Controleert of dit apparaat al een geldige authenticated sessie heeft.
-// Zo niet: roept toonSetupScherm() aan (gedefinieerd in index.html).
-// Geeft true terug als de app normaal mag starten, false als setup vereist is.
+const _SESSIE_SLEUTEL = 'kr_kassa_tokens';
+
 async function initSessie() {
-  const { data: { session } } = await supa.auth.getSession();
+  let { data: { session } } = await supa.auth.getSession();
+
+  // Supabase bewaart de sessie zelf, maar als backup ook eigen opslag proberen.
+  if (!session) {
+    const opgeslagen = localStorage.getItem(_SESSIE_SLEUTEL);
+    if (opgeslagen) {
+      try {
+        const tokens = JSON.parse(opgeslagen);
+        const { data, error } = await supa.auth.setSession(tokens);
+        if (!error && data.session) {
+          session = data.session;
+        } else {
+          localStorage.removeItem(_SESSIE_SLEUTEL);
+        }
+      } catch { localStorage.removeItem(_SESSIE_SLEUTEL); }
+    }
+  }
+
   if (session) return true;
   if (typeof toonSetupScherm === 'function') toonSetupScherm();
   return false;
 }
 
-// Activeert dit apparaat met een setup-sleutel: vraagt een sessie op bij de
-// Edge Function en slaat hem op via supabase-js (auto-refresh inbegrepen).
 async function activeerApparaat(sleutel) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/activeer-apparaat`, {
     method: 'POST',
@@ -71,6 +85,9 @@ async function activeerApparaat(sleutel) {
     throw new Error(error || `HTTP ${res.status}`);
   }
   const { access_token, refresh_token } = await res.json();
+  // Sla tokens op in eigen sleutel als backup voor browser-sessies die
+  // de Supabase-interne opslag wissen (bijv. Safari ITP, PWA-herstart).
+  localStorage.setItem(_SESSIE_SLEUTEL, JSON.stringify({ access_token, refresh_token }));
   const { error } = await supa.auth.setSession({ access_token, refresh_token });
   if (error) throw new Error(error.message);
 }
