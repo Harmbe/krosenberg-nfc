@@ -43,6 +43,11 @@ db.version(4).stores({
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Primaire sleutel per tabel — nodig omdat delete()-aanroepen niet zomaar op
+// "id" mogen filteren: plekken/bandjes hebben een andere sleutelkolom, en een
+// verkeerde kolomnaam laat een delete stilzwijgend niets raken.
+const PRIMAIRE_SLEUTEL = { leden: 'uid', plekken: 'plek_code', bandjes: 'bandje_uid' };
+
 // ── Online status ──────────────────────────────────────────────────────────────
 let isOnline = navigator.onLine;
 window.addEventListener('online',  () => { isOnline = true;  updateStatusBadge(); syncWachtrij(); });
@@ -74,6 +79,42 @@ async function schrijf(tabel, actie, data) {
   if (isOnline) await syncWachtrij();
 }
 
+// Schrijft één consumptie in twee stappen (log-rij + regels). Gebruikt door
+// zowel de directe (online) registratie als de latere wachtrij-verwerking,
+// zodat beide paden identiek gedrag hebben en fouten niet meer stilzwijgend
+// verdwijnen. upsert (i.p.v. insert) op de log-rij en delete-dan-insert op de
+// regels maken een herhaalde poging na een eerdere gedeeltelijke mislukking
+// veilig: geen dubbele log-rij, geen dubbele regels.
+async function schrijfConsumptieOnline(entry) {
+  try {
+    const { error: logFout } = await supa.from('consumptie_log').upsert({
+      id: entry.id,
+      lid_uid: entry.lid_uid,
+      naam: entry.naam,
+      omschrijving: entry.omschrijving,
+      totaal: entry.totaal,
+      geregistreerd_op: entry.geregistreerd_op,
+    });
+    if (logFout) { console.warn('[consumptie] log-rij opslaan mislukt:', logFout); return false; }
+
+    const regels = (entry.items || []).map(([naam, v]) => ({
+      log_id: entry.id,
+      product_naam: naam,
+      prijs: v.prijs,
+      aantal: v.aantal,
+    }));
+    if (regels.length) {
+      await supa.from('consumptie_regels').delete().eq('log_id', entry.id);
+      const { error: regelsFout } = await supa.from('consumptie_regels').insert(regels);
+      if (regelsFout) { console.warn('[consumptie] regels opslaan mislukt:', regelsFout); return false; }
+    }
+    return true;
+  } catch (e) {
+    console.warn('[consumptie] onverwachte fout bij opslaan:', e);
+    return false;
+  }
+}
+
 // ── Sync-wachtrij verwerken ────────────────────────────────────────────────────
 async function syncWachtrij() {
   const wachtrij = await db.sync_queue.where('gesyncroniseerd').equals(0).toArray();
@@ -94,11 +135,14 @@ async function syncWachtrij() {
     let ok = false;
     let fout = null;
     try {
-      if (item.actie === 'upsert') {
+      if (item.tabel === 'consumptie_log' && item.actie === 'upsert') {
+        ok = await schrijfConsumptieOnline(data);
+        fout = ok ? null : new Error('Consumptie wegschrijven mislukt (zie eerdere console-waarschuwing)');
+      } else if (item.actie === 'upsert') {
         const { error } = await supa.from(item.tabel).upsert(data);
         ok = !error; fout = error;
       } else if (item.actie === 'delete') {
-        const sleutel = item.tabel === 'leden' ? 'uid' : 'id';
+        const sleutel = PRIMAIRE_SLEUTEL[item.tabel] || 'id';
         const { error } = await supa.from(item.tabel).delete().eq(sleutel, data[sleutel]);
         ok = !error; fout = error;
       }
@@ -160,7 +204,10 @@ const DB = {
   async upsertPlek(plek) {
     await db.plekken.put(plek);
     if (isOnline) {
-      try { await supa.from('plekken').upsert(plek); }
+      try {
+        const { error } = await supa.from('plekken').upsert(plek);
+        if (error) throw error;
+      }
       catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
     } else {
       await db.sync_queue.add({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
@@ -169,7 +216,10 @@ const DB = {
   async verwijderPlek(plek_code) {
     await db.plekken.delete(plek_code);
     if (isOnline) {
-      try { await supa.from('plekken').delete().eq('plek_code', plek_code); }
+      try {
+        const { error } = await supa.from('plekken').delete().eq('plek_code', plek_code);
+        if (error) throw error;
+      }
       catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
     } else {
       await db.sync_queue.add({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
@@ -178,7 +228,10 @@ const DB = {
   async upsertBandje(bandje) {
     await db.bandjes.put(bandje);
     if (isOnline) {
-      try { await supa.from('bandjes').upsert(bandje); }
+      try {
+        const { error } = await supa.from('bandjes').upsert(bandje);
+        if (error) throw error;
+      }
       catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
     } else {
       await db.sync_queue.add({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
@@ -187,7 +240,10 @@ const DB = {
   async verwijderBandje(bandje_uid) {
     await db.bandjes.delete(bandje_uid);
     if (isOnline) {
-      try { await supa.from('bandjes').delete().eq('bandje_uid', bandje_uid); }
+      try {
+        const { error } = await supa.from('bandjes').delete().eq('bandje_uid', bandje_uid);
+        if (error) throw error;
+      }
       catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
     } else {
       await db.sync_queue.add({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
@@ -221,30 +277,8 @@ const DB = {
     entry.id = crypto.randomUUID();
     entry.geregistreerd_op = new Date().toISOString();
     await db.log.put(entry);
-    // Log naar Supabase in twee stappen
-    if (isOnline) {
-      try {
-        const { data: logRij } = await supa.from('consumptie_log').insert({
-          id: entry.id,
-          lid_uid: entry.lid_uid,
-          naam: entry.naam,
-          omschrijving: entry.omschrijving,
-          totaal: entry.totaal,
-          geregistreerd_op: entry.geregistreerd_op,
-        }).select().single();
-        if (logRij) {
-          const regels = entry.items.map(([naam, v]) => ({
-            log_id: entry.id,
-            product_naam: naam,
-            prijs: v.prijs,
-            aantal: v.aantal,
-          }));
-          await supa.from('consumptie_regels').insert(regels);
-        }
-      } catch {
-        await db.sync_queue.add({ tabel: 'consumptie_log', actie: 'upsert', data: JSON.stringify(entry), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
-      }
-    } else {
+    const gelukt = isOnline && await schrijfConsumptieOnline(entry);
+    if (!gelukt) {
       await db.sync_queue.add({ tabel: 'consumptie_log', actie: 'upsert', data: JSON.stringify(entry), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
     }
   },
