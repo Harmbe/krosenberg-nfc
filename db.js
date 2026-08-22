@@ -63,27 +63,36 @@ supa.auth.onAuthStateChange((event, session) => {
 });
 
 async function initSessie() {
-  let { data: { session } } = await supa.auth.getSession();
+  let diagnose = '';
+  let { data: { session }, error: getSessionFout } = await supa.auth.getSession();
+  diagnose += `getSession(): ${session ? 'sessie gevonden' : 'geen sessie'}${getSessionFout ? ' — fout: ' + getSessionFout.message : ''}. `;
 
   // Supabase bewaart de sessie zelf, maar als backup ook eigen opslag proberen.
   if (!session) {
     const opgeslagen = localStorage.getItem(_SESSIE_SLEUTEL);
+    diagnose += `backup-token: ${opgeslagen ? 'aanwezig' : 'ontbreekt'}. `;
     if (opgeslagen) {
       try {
         const tokens = JSON.parse(opgeslagen);
         const { data, error } = await supa.auth.setSession(tokens);
         if (!error && data.session) {
           session = data.session;
+          diagnose += 'setSession() met backup gelukt.';
         } else {
           // Refresh token verlopen — backup wissen, opnieuw activeren vereist.
+          diagnose += `setSession() met backup mislukt: ${error ? error.message : 'geen sessie teruggekregen'}.`;
           localStorage.removeItem(_SESSIE_SLEUTEL);
         }
-      } catch { localStorage.removeItem(_SESSIE_SLEUTEL); }
+      } catch (e) {
+        diagnose += `backup-token onleesbaar: ${e.message}.`;
+        localStorage.removeItem(_SESSIE_SLEUTEL);
+      }
     }
   }
 
   if (session) return true;
-  if (typeof toonSetupScherm === 'function') toonSetupScherm();
+  console.warn('[initSessie] geen geldige sessie:', diagnose);
+  if (typeof toonSetupScherm === 'function') toonSetupScherm(diagnose);
   return false;
 }
 
