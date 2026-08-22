@@ -320,66 +320,6 @@
   .bevestig-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .bevestig-btn:not(:disabled):hover { background: var(--kr-accent); }
 
-  /* BEVESTIGING */
-  #screen-bevestig {
-    background: var(--kr-cream);
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-  }
-
-  .bevestig-card {
-    background: white;
-    border-radius: 16px;
-    padding: 40px;
-    max-width: 400px;
-    width: 100%;
-    text-align: center;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
-  }
-
-  .check-icon {
-    width: 80px; height: 80px;
-    border-radius: 50%;
-    background: #e8f5e0;
-    border: 3px solid #4a7c2f;
-    margin: 0 auto 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2rem;
-  }
-
-  .bevestig-card h2 { color: var(--kr-forest); margin-bottom: 16px; }
-
-  .bevestig-regels { text-align: left; margin-bottom: 16px; }
-  .bevestig-regel { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--kr-sand); font-size: 0.9rem; }
-  .bevestig-totaalregel { display: flex; justify-content: space-between; padding: 10px 0; font-weight: 700; font-size: 1.05rem; color: var(--kr-forest); }
-
-  .bevestig-openstaand {
-    background: #fff8e1;
-    border: 1px solid #f4d03f;
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 0.9rem;
-    color: #7d6608;
-    margin-bottom: 20px;
-  }
-
-  .ok-btn {
-    background: var(--kr-forest);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 14px 40px;
-    font-size: 1rem;
-    cursor: pointer;
-    width: 100%;
-    transition: background 0.2s;
-  }
-
-  .ok-btn:hover { background: var(--kr-accent); }
-
   /* BEHEER */
   #screen-beheer {
     background: var(--kr-sand);
@@ -1312,21 +1252,6 @@
   </div>
 </div>
 
-<!-- BEVESTIGING -->
-<div id="screen-bevestig" class="screen">
-  <div class="bevestig-card">
-    <div class="check-icon">✓</div>
-    <h2>Geregistreerd!</h2>
-    <div class="bevestig-regels" id="bevestig-regels"></div>
-    <div class="bevestig-totaalregel">
-      <span>Totaal deze bestelling</span>
-      <span id="bevestig-totaal">€0,00</span>
-    </div>
-    <div class="bevestig-openstaand" id="bevestig-openstaand"></div>
-    <button class="ok-btn" onclick="toonScherm('tap')">OK — Volgende gast</button>
-  </div>
-</div>
-
 <!-- ADMINISTRATIE -->
 <div id="screen-admin" class="screen">
   <div style="padding:12px 16px 0"><button onclick="toonScherm('tap')" style="background:none;border:none;cursor:pointer;color:var(--kr-sand);font-size:0.9rem;padding:4px 0">← Terug</button></div>
@@ -1720,8 +1645,6 @@ let _sessieTimeout = null;
 let _openBetaalLog = [];
 let _laatsteNfcScan = 0;
 
-let _bevestigTimer = null;
-
 function autoSchaal() {
   document.documentElement.style.zoom = '';
   requestAnimationFrame(() => {
@@ -1736,7 +1659,6 @@ function autoSchaal() {
 window.addEventListener('resize', autoSchaal);
 
 function toonScherm(naam) {
-  clearTimeout(_bevestigTimer);
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById('screen-' + naam);
   if (el) el.classList.add('active');
@@ -1748,7 +1670,6 @@ function toonScherm(naam) {
   if (naam === 'artikelen') { renderArtikelLijst(); }
   if (naam === 'leden')     { renderLedenGrid(); }
   if (naam === 'voorraad')  { renderVoorraadAanvullen(); }
-  if (naam === 'bevestig')  { _bevestigTimer = setTimeout(() => toonScherm('tap'), 8000); }
   autoSchaal();
 }
 
@@ -2368,15 +2289,13 @@ async function bevestigBestelling() {
   gast.openstaand = Math.round(alleLog.filter(r => r.lid_uid === gast.uid && (!laatste || r.geregistreerd_op > laatste)).reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
   await DB.upsertLid(gast);
 
-  // UI-update
-  document.getElementById('bevestig-regels').innerHTML = items.map(([naam, v]) =>
-    `<div class="bevestig-regel"><span>${esc(v.aantal)}× ${esc(naam)}</span><span>€${(v.prijs * v.aantal).toFixed(2).replace('.', ',')}</span></div>`
-  ).join('');
-  document.getElementById('bevestig-totaal').textContent = '€' + totaal.toFixed(2).replace('.', ',');
-  document.getElementById('bevestig-openstaand').textContent = `Totaal openstaand voor ${esc(gast.naam)}: €${gast.openstaand.toFixed(2).replace('.', ',')}`;
-
+  // Geen apart bevestigingsscherm meer — dat herhaalde alleen wat de gast al
+  // in het winkelmandje zag (regels + totaal), en kostte de volgende gast
+  // nodeloos tijd. Terug naar het tapscherm, met een korte toast als
+  // bevestiging.
   geluidBevestigd();
-  toonScherm('bevestig');
+  toonToast(`✓ Geregistreerd — nieuw openstaand: €${gast.openstaand.toFixed(2).replace('.', ',')}`);
+  toonScherm('tap');
 
   // Automatisch bon printen
   const printCategorieen = ['eten'];
