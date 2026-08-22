@@ -3,6 +3,10 @@
 const SUPABASE_URL = 'https://qdhnwhgfozdncgioeied.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkaG53aGdmb3pkbmNnaW9laWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDY5NTIsImV4cCI6MjA5ODMyMjk1Mn0.IdUbivJZQIrrCDHjxEqunEu046TMFasbaUfZwZrRPfA';
 
+// Velden die we ophalen voor leden — pincode en pincode_hash worden bewust
+// weggelaten: de pincodecheck loopt via de controleer-pin Edge Function.
+const LEDEN_KOLOMMEN = 'uid,naam,plek,openstaand,beheerder,aangemaakt_op,bijgewerkt_op';
+
 // ── IndexedDB via Dexie ────────────────────────────────────────────────────────
 const db = new Dexie('KrosenbergNFC');
 db.version(1).stores({
@@ -42,6 +46,34 @@ db.version(4).stores({
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ── Apparaat-sessie ────────────────────────────────────────────────────────────
+// Controleert of dit apparaat al een geldige authenticated sessie heeft.
+// Zo niet: roept toonSetupScherm() aan (gedefinieerd in index.html).
+// Geeft true terug als de app normaal mag starten, false als setup vereist is.
+async function initSessie() {
+  const { data: { session } } = await supa.auth.getSession();
+  if (session) return true;
+  if (typeof toonSetupScherm === 'function') toonSetupScherm();
+  return false;
+}
+
+// Activeert dit apparaat met een setup-sleutel: vraagt een sessie op bij de
+// Edge Function en slaat hem op via supabase-js (auto-refresh inbegrepen).
+async function activeerApparaat(sleutel) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/activeer-apparaat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+    body: JSON.stringify({ sleutel }),
+  });
+  if (!res.ok) {
+    const { error } = await res.json().catch(() => ({}));
+    throw new Error(error || `HTTP ${res.status}`);
+  }
+  const { access_token, refresh_token } = await res.json();
+  const { error } = await supa.auth.setSession({ access_token, refresh_token });
+  if (error) throw new Error(error.message);
+}
 
 // Primaire sleutel per tabel — nodig omdat delete()-aanroepen niet zomaar op
 // "id" mogen filteren: plekken/bandjes hebben een andere sleutelkolom, en een
@@ -172,7 +204,7 @@ async function laadVanSupabase() {
   try {
     const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }] =
       await Promise.all([
-        supa.from('leden').select('*'),
+        supa.from('leden').select(LEDEN_KOLOMMEN),
         supa.from('producten').select('*'),
         supa.from('consumptie_log').select('*, consumptie_regels(*)'),
         supa.from('betalingen').select('*'),
