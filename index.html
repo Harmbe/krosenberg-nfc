@@ -2089,11 +2089,8 @@ function sluitGastPinModal() {
 
 function openStelPinModal(verplicht) {
   const gast = gasten[huidigeBandje];
-  const heeftPin = !!gast?.pincode;
-  document.getElementById('stel-pin-titel').textContent = heeftPin ? '🔑 Pincode wijzigen' : '🔑 Pincode instellen';
-  document.getElementById('stel-pin-uitleg').textContent = heeftPin
-    ? 'Voer een nieuwe pincode in.'
-    : 'Stel een pincode in zodat je zonder bandje kunt bestellen via je pleknummer.';
+  document.getElementById('stel-pin-titel').textContent = '🔑 Pincode instellen';
+  document.getElementById('stel-pin-uitleg').textContent = 'Stel een pincode in zodat je zonder bandje kunt bestellen via je pleknummer.';
   document.getElementById('stel-pin-skip-btn').style.display = verplicht ? 'none' : '';
   _pinReset('stel-pin-nieuw');
   _pinReset('stel-pin-herhaal');
@@ -2109,14 +2106,29 @@ function sluitStelPinModal() {
 async function bevestigStelPin() {
   const nieuw = document.getElementById('stel-pin-nieuw').value;
   const herhaal = document.getElementById('stel-pin-herhaal').value;
-  if (!nieuw) { document.getElementById('stel-pin-fout').textContent = 'Voer een pincode in'; return; }
-  if (nieuw !== herhaal) { document.getElementById('stel-pin-fout').textContent = 'Pincodes komen niet overeen'; _pinReset('stel-pin-herhaal'); pinActiveer('stel-pin-herhaal'); return; }
-  const gast = gasten[huidigeBandje];
-  gast.pincode = nieuw.trim();
-  await DB.upsertLid(gast);
-  if (isOnline) {
-    const { error } = await supa.from('leden').upsert(gast);
-    if (error) { document.getElementById('stel-pin-fout').textContent = 'Opslaan mislukt: ' + error.message; return; }
+  const fout = document.getElementById('stel-pin-fout');
+  if (!nieuw) { fout.textContent = 'Voer een pincode in'; return; }
+  if (nieuw !== herhaal) { fout.textContent = 'Pincodes komen niet overeen'; _pinReset('stel-pin-herhaal'); pinActiveer('stel-pin-herhaal'); return; }
+  fout.textContent = 'Opslaan…';
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/stel-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + (session?.access_token || SUPABASE_KEY),
+      },
+      body: JSON.stringify({ uid: huidigeBandje, nieuwePincode: nieuw.trim() }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      fout.textContent = 'Opslaan mislukt: ' + (d.error || res.status);
+      return;
+    }
+  } catch (e) {
+    fout.textContent = 'Verbindingsfout — probeer opnieuw';
+    return;
   }
   sluitStelPinModal();
   toonToast('✓ Pincode opgeslagen');
