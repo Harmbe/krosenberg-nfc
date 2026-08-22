@@ -5,7 +5,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 // Velden die we ophalen voor leden — pincode en pincode_hash worden bewust
 // weggelaten: de pincodecheck loopt via de controleer-pin Edge Function.
-const LEDEN_KOLOMMEN = 'uid,naam,plek,openstaand,beheerder,aangemaakt_op,bijgewerkt_op';
+const LEDEN_KOLOMMEN = 'uid,naam,plek,openstaand,beheerder,aangemaakt_op,bijgewerkt_op,heeft_pincode';
 
 // ── IndexedDB via Dexie ────────────────────────────────────────────────────────
 const db = new Dexie('KrosenbergNFC');

@@ -1940,7 +1940,7 @@ function openBewerkLid() {
   document.getElementById('bewerk-type').value = g.type || 'lid';
   document.getElementById('bewerk-pincode-blok').style.display = (g.type === 'gast') ? 'none' : '';
   document.getElementById('bewerk-pincode').value = '';
-  document.getElementById('bewerk-pincode-status').textContent = g.pincode ? '(ingesteld — leeg laten om te bewaren)' : '(nog niet ingesteld)';
+  document.getElementById('bewerk-pincode-status').textContent = g.heeft_pincode ? '(ingesteld — leeg laten om te bewaren)' : '(nog niet ingesteld)';
   document.getElementById('bewerk-beheerder').checked = !!g.beheerder;
   document.getElementById('bewerk-email').value = g.email || '';
   renderBandjesInLidModal(uid);
