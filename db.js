@@ -1,5 +1,9 @@
 // ── Supabase + IndexedDB sync engine ──────────────────────────────────────────
 
+// Tijdelijke versie-markering — bewijst of deze exacte db.js daadwerkelijk
+// wordt uitgevoerd, los van elke sessie-/opslaglogica hieronder.
+alert('db.js DIAGNOSE-VERSIE geladen — ' + new Date().toISOString());
+
 const SUPABASE_URL = 'https://qdhnwhgfozdncgioeied.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkaG53aGdmb3pkbmNnaW9laWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDY5NTIsImV4cCI6MjA5ODMyMjk1Mn0.IdUbivJZQIrrCDHjxEqunEu046TMFasbaUfZwZrRPfA';
 
