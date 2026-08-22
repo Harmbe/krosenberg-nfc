@@ -50,6 +50,18 @@ const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // ── Apparaat-sessie ────────────────────────────────────────────────────────────
 const _SESSIE_SLEUTEL = 'kr_kassa_tokens';
 
+// Houd backup-tokens actueel zodra Supabase de access token automatisch ververst.
+supa.auth.onAuthStateChange((event, session) => {
+  if (session) {
+    localStorage.setItem(_SESSIE_SLEUTEL, JSON.stringify({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    }));
+  } else if (event === 'SIGNED_OUT') {
+    localStorage.removeItem(_SESSIE_SLEUTEL);
+  }
+});
+
 async function initSessie() {
   let { data: { session } } = await supa.auth.getSession();
 
@@ -63,6 +75,7 @@ async function initSessie() {
         if (!error && data.session) {
           session = data.session;
         } else {
+          // Refresh token verlopen — backup wissen, opnieuw activeren vereist.
           localStorage.removeItem(_SESSIE_SLEUTEL);
         }
       } catch { localStorage.removeItem(_SESSIE_SLEUTEL); }
@@ -85,8 +98,6 @@ async function activeerApparaat(sleutel) {
     throw new Error(error || `HTTP ${res.status}`);
   }
   const { access_token, refresh_token } = await res.json();
-  // Sla tokens op in eigen sleutel als backup voor browser-sessies die
-  // de Supabase-interne opslag wissen (bijv. Safari ITP, PWA-herstart).
   localStorage.setItem(_SESSIE_SLEUTEL, JSON.stringify({ access_token, refresh_token }));
   const { error } = await supa.auth.setSession({ access_token, refresh_token });
   if (error) throw new Error(error.message);

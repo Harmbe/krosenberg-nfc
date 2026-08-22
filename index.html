@@ -1847,6 +1847,9 @@ async function controleerPin() {
     const data = await res.json();
     naam = data.naam || null;
   } catch (e) {
+    // Waarschijnlijk verlopen sessie (CORS-fout voor JWT-check). Heractiveer apparaat.
+    const hernieuw = await initSessie();
+    if (!hernieuw) return; // initSessie toont setup-scherm
     document.getElementById('pin-fout').textContent = 'Verbindingsfout — probeer opnieuw';
     _pinReset('pin-invoer');
     return;
@@ -2077,6 +2080,8 @@ async function controleerGastPin() {
     _pinReset('gast-pin-invoer');
     if (_gastPinPogingen >= 5) setTimeout(() => { _gastPinPogingen = 0; }, 30000);
   } catch (e) {
+    const hernieuw = await initSessie();
+    if (!hernieuw) return;
     fout.textContent = 'Verbindingsfout — probeer opnieuw';
     _pinReset('gast-pin-invoer');
   }
