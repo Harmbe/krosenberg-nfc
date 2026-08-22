@@ -3584,9 +3584,11 @@ async function voerSetupUit() {
 
     // Tijdelijke diagnose: direct na activeren controleren of er echt iets is
     // weggeschreven, vóórdat een herstart kan aantonen of het weer verdwijnt.
+    // alert() i.p.v. toonToast(): die laatste bleek onzichtbaar te blijven
+    // achter het nog zichtbare setup-scherm (lagere z-index).
     const backupNaActivatie = localStorage.getItem('kr_kassa_tokens');
     const { data: { session: sessieNaActivatie } } = await supa.auth.getSession();
-    toonToast(`⚠️ Na activeren: backup=${backupNaActivatie ? 'aanwezig' : 'ONTBREEKT'}, getSession=${sessieNaActivatie ? 'aanwezig' : 'ONTBREEKT'}`);
+    alert(`Na activeren: backup=${backupNaActivatie ? 'aanwezig' : 'ONTBREEKT'}, getSession=${sessieNaActivatie ? 'aanwezig' : 'ONTBREEKT'}`);
 
     document.getElementById('setup-overlay').style.display = 'none';
     await laadVanSupabase();
