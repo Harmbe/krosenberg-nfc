@@ -2019,13 +2019,10 @@ async function controleerGastPin() {
     }
     const data = await res.json().catch(() => ({}));
     if (data.geenPincode) {
-      // Nog geen pincode voor dit lid: meteen laten instellen i.p.v. een
-      // doodlopende weg — selecteerLid() zet huidigeBandje correct, waar
-      // openStelPinModal()/bevestigStelPin() op vertrouwen.
-      _gastPinPogingen = 0;
-      sluitGastPinModal();
-      selecteerLid(uid);
-      openStelPinModal(true);
+      // Elk lid krijgt een bandje en stelt daarmee verplicht een pincode in
+      // (zie scanBandje()) — komt iemand hier toch zonder pincode terecht,
+      // dan heeft hij nog nooit met zijn bandje ingelogd.
+      fout.textContent = 'Nog geen pincode ingesteld — log eerst één keer in met je bandje';
       return;
     }
     _gastPinPogingen++;
@@ -2171,11 +2168,12 @@ async function scanBandje(bandje_uid) {
       updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
       geluidScan();
       toonScherm('producten');
-      // Optioneel — bij bandje-gebruik is een pincode niet nodig, dit is
-      // alleen een vrijblijvende herinnering zodat hij ook zonder bandje
-      // kan inloggen. Verplicht instellen gebeurt in controleerGastPin(),
-      // bij het inloggen mét pleknummer zonder bandje.
-      if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(false);
+      // Verplicht: elk lid krijgt een bandje, dus dit is het moment waarop
+      // identiteit al vaststaat (fysiek bandje) om de pincode-backup voor
+      // het inloggen zónder bandje verplicht in te laten stellen.
+      // type 'gast' (verhuur-plekken) slaat dit over, geen persoonlijke
+      // pincode-flow.
+      if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(true);
       verversOpenstaandBijScan(lid_uid);
       return;
     }
@@ -2191,8 +2189,8 @@ async function scanBandje(bandje_uid) {
   updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
   geluidScan();
   toonScherm('producten');
-  // Optioneel, zie toelichting hierboven bij de lid-koppeling-tak.
-  if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(false);
+  // Verplicht, zie toelichting hierboven bij de lid-koppeling-tak.
+  if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(true);
   verversOpenstaandBijScan(bandje_uid);
 }
 
