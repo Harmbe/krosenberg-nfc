@@ -3005,7 +3005,7 @@ function geluidBevestigd() { speelToon(523, 0.1); setTimeout(() => speelToon(659
 })();
 
 // Sync elke 60 seconden als online
-setInterval(() => { if (isOnline) syncWachtrij(); }, 60000);
+setInterval(() => { syncWachtrij(); }, 60000);
 
 // ── Plekken & Bandjes beheer ─────────────────────────────────────────────────
 

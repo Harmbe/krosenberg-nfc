@@ -160,8 +160,13 @@ async function schrijf(tabel, actie, data) {
     gesyncroniseerd: 0,
   });
 
-  // 3. Direct proberen te syncen
-  if (isOnline) await syncWachtrij();
+  // 3. Direct proberen te syncen — altijd, ongeacht de isOnline-vlag. Die
+  // vlag volgt navigator.onLine, dat op een tablet die net uit slaapstand
+  // komt (wifi nog aan het herverbinden) best een paar seconden "offline"
+  // kan blijven zeggen terwijl de eerste aankoop van een net wakker
+  // geworden gast alweer binnenkomt. Gewoon proberen en op een echte fout
+  // reageren is betrouwbaarder dan op die vlag vertrouwen vóór de poging.
+  await syncWachtrij();
 }
 
 // Schrijft één consumptie in twee stappen (log-rij + regels). Gebruikt door
@@ -253,7 +258,8 @@ async function updateSyncBadge() {
 
 // ── Initieel laden: Supabase → IndexedDB ──────────────────────────────────────
 async function laadVanSupabase() {
-  if (!isOnline) return;
+  // Geen isOnline-gate meer — altijd proberen, de catch hieronder vangt een
+  // echte netwerkfout al op (zie toelichting bij schrijf()).
   try {
     const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }] =
       await Promise.all([
@@ -286,53 +292,39 @@ const DB = {
   async getBandjes()   { return db.bandjes.toArray(); },
   async getProducten() { return db.producten.toArray(); },
 
+  // Altijd meteen proberen (ongeacht isOnline) en pas bij een echte fout in
+  // de wachtrij zetten — zie toelichting bij schrijf().
   async upsertPlek(plek) {
     await db.plekken.put(plek);
-    if (isOnline) {
-      try {
-        const { error } = await supa.from('plekken').upsert(plek);
-        if (error) throw error;
-      }
-      catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
-    } else {
-      await db.sync_queue.add({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    try {
+      const { error } = await supa.from('plekken').upsert(plek);
+      if (error) throw error;
     }
+    catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
   },
   async verwijderPlek(plek_code) {
     await db.plekken.delete(plek_code);
-    if (isOnline) {
-      try {
-        const { error } = await supa.from('plekken').delete().eq('plek_code', plek_code);
-        if (error) throw error;
-      }
-      catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
-    } else {
-      await db.sync_queue.add({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    try {
+      const { error } = await supa.from('plekken').delete().eq('plek_code', plek_code);
+      if (error) throw error;
     }
+    catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
   },
   async upsertBandje(bandje) {
     await db.bandjes.put(bandje);
-    if (isOnline) {
-      try {
-        const { error } = await supa.from('bandjes').upsert(bandje);
-        if (error) throw error;
-      }
-      catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
-    } else {
-      await db.sync_queue.add({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    try {
+      const { error } = await supa.from('bandjes').upsert(bandje);
+      if (error) throw error;
     }
+    catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
   },
   async verwijderBandje(bandje_uid) {
     await db.bandjes.delete(bandje_uid);
-    if (isOnline) {
-      try {
-        const { error } = await supa.from('bandjes').delete().eq('bandje_uid', bandje_uid);
-        if (error) throw error;
-      }
-      catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
-    } else {
-      await db.sync_queue.add({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    try {
+      const { error } = await supa.from('bandjes').delete().eq('bandje_uid', bandje_uid);
+      if (error) throw error;
     }
+    catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
   },
   async getBandjesVoor(koppeling_id) {
     return db.bandjes.where('koppeling_id').equals(koppeling_id).toArray();
@@ -362,7 +354,8 @@ const DB = {
     entry.id = crypto.randomUUID();
     entry.geregistreerd_op = new Date().toISOString();
     await db.log.put(entry);
-    const gelukt = isOnline && await schrijfConsumptieOnline(entry);
+    // Altijd proberen, ongeacht isOnline — zie toelichting bij schrijf().
+    const gelukt = await schrijfConsumptieOnline(entry);
     if (!gelukt) {
       await db.sync_queue.add({ tabel: 'consumptie_log', actie: 'upsert', data: JSON.stringify(entry), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
     }
