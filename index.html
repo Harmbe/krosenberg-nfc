@@ -2304,12 +2304,14 @@ function updateOpenstaand() {
   document.getElementById('gast-openstaand').textContent = '€' + gast.openstaand.toFixed(2).replace('.', ',');
 }
 
-// type 'gast' (verhuurplekken) heeft geen persoonlijke pincode-flow — die
-// knop dus verbergen, ongeacht hoe deze gast is ingelogd.
+// type 'gast' (verhuurplekken) heeft geen persoonlijke pincode-flow, en
+// type 'intern' (bestuur/commissie) mag de eigen pincode niet zelf kunnen
+// wijzigen — dat mag uitsluitend een beheerder, via Beheer > Leden. Alleen
+// 'lid' krijgt deze knop dus te zien.
 function updateMijnPincodeKnop() {
   const btn = document.getElementById('mijn-pincode-knop');
   const gast = gasten[huidigeBandje];
-  if (btn) btn.style.display = (gast && gast.type === 'gast') ? 'none' : '';
+  if (btn) btn.style.display = (gast && gast.type !== 'lid') ? 'none' : '';
 }
 
 function productKnopHTML(p) {
