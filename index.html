@@ -2019,7 +2019,13 @@ async function controleerGastPin() {
     }
     const data = await res.json().catch(() => ({}));
     if (data.geenPincode) {
-      fout.textContent = 'Geen pincode ingesteld — vraag de beheerder';
+      // Nog geen pincode voor dit lid: meteen laten instellen i.p.v. een
+      // doodlopende weg — selecteerLid() zet huidigeBandje correct, waar
+      // openStelPinModal()/bevestigStelPin() op vertrouwen.
+      _gastPinPogingen = 0;
+      sluitGastPinModal();
+      selecteerLid(uid);
+      openStelPinModal(true);
       return;
     }
     _gastPinPogingen++;
@@ -2165,11 +2171,11 @@ async function scanBandje(bandje_uid) {
       updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
       geluidScan();
       toonScherm('producten');
-      // Verplicht (geen "sla over") — een lid moet een pincode hebben vóór
-      // hij kan bestellen, als terugvaloptie voor als hij zonder bandje
-      // aan de kassa staat. type 'gast' (verhuur-plekken) slaat dit over,
-      // die hebben geen persoonlijke pincode-flow.
-      if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(true);
+      // Optioneel — bij bandje-gebruik is een pincode niet nodig, dit is
+      // alleen een vrijblijvende herinnering zodat hij ook zonder bandje
+      // kan inloggen. Verplicht instellen gebeurt in controleerGastPin(),
+      // bij het inloggen mét pleknummer zonder bandje.
+      if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(false);
       verversOpenstaandBijScan(lid_uid);
       return;
     }
@@ -2185,7 +2191,8 @@ async function scanBandje(bandje_uid) {
   updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
   geluidScan();
   toonScherm('producten');
-  if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(true);
+  // Optioneel, zie toelichting hierboven bij de lid-koppeling-tak.
+  if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(false);
   verversOpenstaandBijScan(bandje_uid);
 }
 
