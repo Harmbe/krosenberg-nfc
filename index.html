@@ -1886,13 +1886,39 @@ async function slaLidwijzigingOp() {
   g.type = type;
   g.beheerder = beheerder;
   g.email = document.getElementById('bewerk-email').value.trim() || null;
-  if (type === 'gast') g.pincode = null;
-  else if (nieuwePincode) g.pincode = nieuwePincode;
+  // DB.upsertLid() schrijft naar lokaal + Supabase (via de wachtrij, die
+  // heeft_pincode/pincode/pincode_hash er al uitfiltert) — geen aparte,
+  // ongefilterde supa.from('leden').upsert(g) hierna meer nodig; die
+  // stuurde heeft_pincode rechtstreeks mee en liet dit altijd mislukken
+  // (generated column).
   await DB.upsertLid(g);
-  if (isOnline) {
-    const { error } = await supa.from('leden').upsert(g);
-    if (error) { toonToast('⚠️ Opslaan naar server mislukt: ' + error.message); return; }
+
+  // Een nieuwe pincode loopt via de stel-pin Edge Function (bcrypt-hash
+  // server-side) — nooit meer als plaintext veld op het ledenobject zetten.
+  if (type !== 'gast' && nieuwePincode) {
+    try {
+      const { data: { session } } = await supa.auth.getSession();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/stel-pin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY,
+          'Authorization': 'Bearer ' + (session?.access_token || SUPABASE_KEY),
+        },
+        body: JSON.stringify({ uid, nieuwePincode }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        toonToast('⚠️ Pincode opslaan mislukt: ' + (d.error || res.status));
+        return;
+      }
+      g.heeft_pincode = true;
+    } catch {
+      toonToast('⚠️ Pincode opslaan mislukt — verbindingsfout');
+      return;
+    }
   }
+
   sluitBewerkLid();
   toonToast(`✓ ${naam} bijgewerkt`);
   renderLedenGrid();
