@@ -222,6 +222,15 @@ async function syncWachtrij() {
       const toegestaan = ['id','naam','prijs','emoji','categorie','omschr','voorraad','laag_waarschuwing','inkoopeenheid','eenheden_per_inkoop','actief','aangemaakt_op','bijgewerkt_op','volgorde'];
       data = Object.fromEntries(Object.entries(data).filter(([k]) => toegestaan.includes(k)));
     }
+    // heeft_pincode is een generated column (GENERATED ALWAYS AS ... STORED) —
+    // Postgres weigert elke upsert die daar een waarde voor meestuurt. Het
+    // lokaal gecachete ledenobject bevat dit veld wél (opgehaald om de
+    // pincode-status te tonen), dus moet het er hier altijd uit vóór een
+    // upsert, anders faalt élke saldo-update op leden structureel.
+    if (item.tabel === 'leden') {
+      const { heeft_pincode, pincode, pincode_hash, ...schoon } = data;
+      data = schoon;
+    }
     let ok = false;
     let fout = null;
     try {
