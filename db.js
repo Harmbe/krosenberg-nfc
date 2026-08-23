@@ -5,7 +5,12 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 // Velden die we ophalen voor leden — pincode en pincode_hash worden bewust
 // weggelaten: de pincodecheck loopt via de controleer-pin Edge Function.
-const LEDEN_KOLOMMEN = 'uid,naam,plek,openstaand,beheerder,aangemaakt_op,bijgewerkt_op,heeft_pincode';
+// type en email hoorden hier wél bij te staan: zonder die twee overschreef
+// elke volledige sync (laadVanSupabase, bij elke herstart) het lokale
+// type-veld met "leeg", waardoor alle type==='gast'-checks in de hele app
+// (pincode-plicht, "Mijn pincode"-knop, geen-bandje-flow) stuk gingen zodra
+// een apparaat opnieuw was opgestart ná de vorige sync.
+const LEDEN_KOLOMMEN = 'uid,naam,plek,openstaand,beheerder,aangemaakt_op,bijgewerkt_op,heeft_pincode,type,email';
 
 // ── IndexedDB via Dexie ────────────────────────────────────────────────────────
 const db = new Dexie('KrosenbergNFC');
