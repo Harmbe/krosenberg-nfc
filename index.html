@@ -2746,12 +2746,16 @@ function renderLedenGrid() {
   }).join('') || '<div style="color:var(--kr-muted);font-size:0.9rem">Geen leden gevonden</div>';
 }
 
+// Zelfde doel als een kaart aanklikken in het overzicht eronder (toonRekening)
+// — dit scherm is puur beheer, dus "selecteren" hoort naar het rekening-
+// scherm te gaan, niet naar het bestelscherm (dat was hier een restant van
+// vóór dit scherm zuiver beheer werd).
 function zoekEnSelecteer() {
   const zoek = document.getElementById('leden-zoek').value.toLowerCase();
   const gevonden = Object.entries(gasten).find(([, g]) =>
     g.plek.toLowerCase() === zoek || g.naam.toLowerCase().includes(zoek)
   );
-  if (gevonden) selecteerLid(gevonden[0]);
+  if (gevonden) toonRekening(gevonden[0]);
   else toonToast('⚠️ Geen lid gevonden');
 }
 
