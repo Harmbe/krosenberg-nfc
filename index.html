@@ -2040,9 +2040,10 @@ function sluitGastPinModal() {
 }
 
 function openStelPinModal(verplicht) {
-  const gast = gasten[huidigeBandje];
   document.getElementById('stel-pin-titel').textContent = '🔑 Pincode instellen';
-  document.getElementById('stel-pin-uitleg').textContent = 'Stel een pincode in zodat je zonder bandje kunt bestellen via je pleknummer.';
+  document.getElementById('stel-pin-uitleg').textContent = verplicht
+    ? 'Voordat je kunt bestellen, moet je eerst een pincode instellen — die gebruik je voortaan om zonder bandje te bestellen via je pleknummer.'
+    : 'Stel een pincode in zodat je zonder bandje kunt bestellen via je pleknummer.';
   document.getElementById('stel-pin-skip-btn').style.display = verplicht ? 'none' : '';
   _pinReset('stel-pin-nieuw');
   _pinReset('stel-pin-herhaal');
@@ -2082,6 +2083,9 @@ async function bevestigStelPin() {
     fout.textContent = 'Verbindingsfout — probeer opnieuw';
     return;
   }
+  // Lokaal meteen bijwerken zodat een volgende scan dit niet nogmaals
+  // afdwingt vóórdat de eerstvolgende volledige data-ververing is geweest.
+  if (gasten[huidigeBandje]) gasten[huidigeBandje].heeft_pincode = true;
   sluitStelPinModal();
   toonToast('✓ Pincode opgeslagen');
 }
@@ -2161,7 +2165,11 @@ async function scanBandje(bandje_uid) {
       updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
       geluidScan();
       toonScherm('producten');
-      if (!gast.pincode) openStelPinModal(false);
+      // Verplicht (geen "sla over") — een lid moet een pincode hebben vóór
+      // hij kan bestellen, als terugvaloptie voor als hij zonder bandje
+      // aan de kassa staat. type 'gast' (verhuur-plekken) slaat dit over,
+      // die hebben geen persoonlijke pincode-flow.
+      if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(true);
       verversOpenstaandBijScan(lid_uid);
       return;
     }
@@ -2177,7 +2185,7 @@ async function scanBandje(bandje_uid) {
   updateOpenstaand(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
   geluidScan();
   toonScherm('producten');
-  if (!gast.pincode) openStelPinModal(false);
+  if (gast.type !== 'gast' && !gast.heeft_pincode) openStelPinModal(true);
   verversOpenstaandBijScan(bandje_uid);
 }
 
