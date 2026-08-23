@@ -47,6 +47,14 @@ def print_bon(p, data):
     totaal   = data.get('totaal', 0)
     tijdstip = datetime.datetime.now().strftime('%d-%m-%Y  %H:%M')
 
+    # Welke gegevens getoond worden is per artikelcategorie instelbaar in de
+    # kassa-app (Artikelen > Bon-instellingen per categorie) — standaard alles
+    # tonen als een veld niet is meegestuurd (bv. bij een oudere aanroep).
+    toon_naam  = data.get('toonNaam', True)
+    toon_plek  = data.get('toonPlek', True)
+    toon_tijd  = data.get('toonTijd', True)
+    toon_prijs = data.get('toonPrijs', True)
+
     p.set(align='center', bold=True, width=2, height=2)
     p.text('KRÖSENBERG\n')
     p.set(align='center', bold=False, width=1, height=1)
@@ -54,9 +62,9 @@ def print_bon(p, data):
     p.text('─' * 32 + '\n')
 
     p.set(align='left')
-    p.text(f'Gast : {naam}\n')
-    p.text(f'Plek : {plek}\n')
-    p.text(f'Tijd : {tijdstip}\n')
+    if toon_naam: p.text(f'Gast : {naam}\n')
+    if toon_plek: p.text(f'Plek : {plek}\n')
+    if toon_tijd: p.text(f'Tijd : {tijdstip}\n')
     p.text('─' * 32 + '\n')
 
     for item in items:
@@ -67,17 +75,21 @@ def print_bon(p, data):
         else:
             inaam, aantal, prijs = item.get('naam'), item.get('aantal', 1), item.get('prijs', 0)
         regel = f'{aantal}x {inaam}'
-        bedrag = f'€{aantal * prijs:.2f}'.replace('.', ',')
-        # Rechts uitlijnen op 32 tekens
-        spaties = 32 - len(regel) - len(bedrag)
-        p.text(regel + ' ' * max(1, spaties) + bedrag + '\n')
+        if toon_prijs:
+            bedrag = f'€{aantal * prijs:.2f}'.replace('.', ',')
+            # Rechts uitlijnen op 32 tekens
+            spaties = 32 - len(regel) - len(bedrag)
+            p.text(regel + ' ' * max(1, spaties) + bedrag + '\n')
+        else:
+            p.text(regel + '\n')
 
-    p.text('─' * 32 + '\n')
-    p.set(bold=True)
-    totaal_str = f'€{totaal:.2f}'.replace('.', ',')
-    label = 'TOTAAL'
-    p.text(label + ' ' * (32 - len(label) - len(totaal_str)) + totaal_str + '\n')
-    p.set(bold=False)
+    if toon_prijs:
+        p.text('─' * 32 + '\n')
+        p.set(bold=True)
+        totaal_str = f'€{totaal:.2f}'.replace('.', ',')
+        label = 'TOTAAL'
+        p.text(label + ' ' * (32 - len(label) - len(totaal_str)) + totaal_str + '\n')
+        p.set(bold=False)
     p.text('\n\n')
     p.cut()
 

@@ -48,6 +48,17 @@ db.version(4).stores({
   bandjes:     'bandje_uid, koppeling_type, koppeling_id',
   voorraad_log: 'id, product_id',
 });
+db.version(5).stores({
+  leden:       'uid, plek, naam',
+  producten:   'id, naam',
+  log:         'id, lid_uid',
+  betalingen:  'id, lid_uid',
+  sync_queue:  '++id, tabel, actie, [gesyncroniseerd+aangemaakt_op]',
+  plekken:     'plek_code',
+  bandjes:     'bandje_uid, koppeling_type, koppeling_id',
+  voorraad_log: 'id, product_id',
+  categorie_instellingen: 'categorie',
+});
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -275,7 +286,7 @@ async function laadVanSupabase() {
   // Geen isOnline-gate meer — altijd proberen, de catch hieronder vangt een
   // echte netwerkfout al op (zie toelichting bij schrijf()).
   try {
-    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }] =
+    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }, { data: categorieInstellingen }] =
       await Promise.all([
         supa.from('leden').select(LEDEN_KOLOMMEN),
         supa.from('producten').select('*'),
@@ -284,6 +295,7 @@ async function laadVanSupabase() {
         supa.from('plekken').select('*'),
         supa.from('bandjes').select('*'),
         supa.from('voorraad_log').select('*'),
+        supa.from('categorie_instellingen').select('*'),
       ]);
 
     if (leden)     await db.leden.bulkPut(leden);
@@ -296,6 +308,7 @@ async function laadVanSupabase() {
     if (plekken)    await db.plekken.bulkPut(plekken);
     if (bandjes)    await db.bandjes.bulkPut(bandjes);
     if (voorraadLog) await db.voorraad_log.bulkPut(voorraadLog);
+    if (categorieInstellingen) await db.categorie_instellingen.bulkPut(categorieInstellingen);
   } catch (e) { console.warn('Supabase laden mislukt, gebruik lokale data', e); }
 }
 
@@ -343,6 +356,9 @@ const DB = {
   async getBandjesVoor(koppeling_id) {
     return db.bandjes.where('koppeling_id').equals(koppeling_id).toArray();
   },
+  async getCategorieInstellingen() { return db.categorie_instellingen.toArray(); },
+  async upsertCategorieInstelling(instelling) { await schrijf('categorie_instellingen', 'upsert', instelling); },
+
   async getLog()       { return (await db.log.toArray()).sort((a,b) => b.geregistreerd_op?.localeCompare(a.geregistreerd_op)); },
   async getBetalingen(){ return (await db.betalingen.toArray()).sort((a,b) => b.betaald_op?.localeCompare(a.betaald_op)); },
   async getVoorraadLog(){ return (await db.voorraad_log.toArray()).sort((a,b) => b.aangemaakt_op?.localeCompare(a.aangemaakt_op)); },
