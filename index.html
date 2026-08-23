@@ -983,9 +983,10 @@
       </div>
     <div class="form-veld" style="margin-bottom:12px">
       <label>Type</label>
-      <select id="bewerk-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('bewerk-pincode-blok').style.display=this.value==='lid'?'':'none'; updateBewerkPlekVeld(); updateBeheerderVeld('bewerk-type','bewerk-beheerder');">
+      <select id="bewerk-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('bewerk-pincode-blok').style.display=this.value==='gast'?'none':''; updateBewerkPlekVeld(); updateBeheerderVeld('bewerk-type','bewerk-beheerder');">
         <option id="bewerk-type-lid-optie" value="lid">Lid (kan ook zonder bandje bestellen)</option>
         <option value="gast">Gast (alleen met bandje)</option>
+        <option value="intern">Intern (bestuur/commissie — kosten vereniging)</option>
       </select>
       <div id="bewerk-type-hint" style="font-size:0.78rem;color:var(--kr-muted);margin-top:2px"></div>
     </div>
@@ -1261,7 +1262,7 @@
 
     <div class="beheer-card" style="grid-column: span 2">
       <div class="totaal-openstaand-blok">
-        <div class="totaal-openstaand-label">Totaal openstaand (alle gasten)</div>
+        <div class="totaal-openstaand-label">Totaal openstaand (leden &amp; gasten)</div>
         <div class="totaal-openstaand-bedrag" id="totaal-openstaand">€0,00</div>
       </div>
     </div>
@@ -1269,6 +1270,12 @@
     <div class="beheer-card" style="grid-column: span 2">
       <h3>Rekeningen per lid / gast</h3>
       <div class="leden-lijst" id="leden-lijst"></div>
+    </div>
+
+    <div class="beheer-card" style="grid-column: span 2">
+      <h3>Verenigingskosten (bestuur/commissies)</h3>
+      <div style="font-size:0.85rem;color:var(--kr-muted);margin-bottom:10px">Loopt niet mee in "Totaal openstaand" of "Ontvangen vandaag" hierboven — dit zijn kosten voor de vereniging, geen vordering op een lid. Totaal nu open: <b id="totaal-intern">€0,00</b></div>
+      <div class="leden-lijst" id="intern-lijst"></div>
     </div>
 
     <div class="beheer-card" style="grid-column: span 2">
@@ -1363,6 +1370,22 @@
         <input type="text" id="leden-zoek" placeholder="bijv. HV3 of Jan" oninput="renderLedenGrid()" onkeydown="if(event.key==='Enter') zoekEnSelecteer()">
       </div>
       <button class="zoek-btn" onclick="zoekEnSelecteer()">Selecteer</button>
+    </div>
+
+    <div class="lid-kaart-beheer">
+      <h3>+ Commissie / bestuur toevoegen</h3>
+      <p style="color:var(--kr-muted);font-size:0.85rem;margin:-8px 0 14px">Voor interne rekeningen (bv. bestuursvergaderingen) waarvan de kosten voor de vereniging zijn, niet voor een lid persoonlijk.</p>
+      <div class="form-rij">
+        <div class="form-veld">
+          <label>Naam</label>
+          <input type="text" id="intern-naam" placeholder="bijv. Feestcommissie">
+        </div>
+        <div class="form-veld">
+          <label>Code (voor zelf-invoer, zoals een pleknummer)</label>
+          <input type="text" id="intern-code" placeholder="bijv. BESTUUR" style="text-transform:uppercase">
+        </div>
+      </div>
+      <button class="opslaan-btn" onclick="voegInternAccountToe()">Toevoegen</button>
     </div>
 
     <div class="lid-kaart-beheer">
@@ -1895,13 +1918,16 @@ function openBewerkLid() {
 //   koppeling zoeken altijd op dat pleknummer. Los wijzigen ontkoppelt de
 //   rekening stilzwijgend van de werkelijke plek.
 function updateBewerkPlekVeld() {
-  const isGast = document.getElementById('bewerk-type').value === 'gast';
+  const type = document.getElementById('bewerk-type').value;
   const veld = document.getElementById('bewerk-plek');
   const hint = document.getElementById('bewerk-plek-hint');
-  veld.disabled = true;
-  veld.style.background = 'var(--kr-cream)';
-  veld.style.cursor = 'not-allowed';
-  hint.textContent = isGast ? '(gekoppeld aan het bandje)' : '(wijzigen via de reserveringen-app)';
+  // Intern (bestuur/commissie) heeft geen koppeling met de reserveringen-app
+  // of een bandje — die code is hier gewoon vrij te wijzigen.
+  const bewerkbaar = type === 'intern';
+  veld.disabled = !bewerkbaar;
+  veld.style.background = bewerkbaar ? '' : 'var(--kr-cream)';
+  veld.style.cursor = bewerkbaar ? '' : 'not-allowed';
+  hint.textContent = bewerkbaar ? '(vrij te kiezen code, bv. BESTUUR)' : (type === 'gast' ? '(gekoppeld aan het bandje)' : '(wijzigen via de reserveringen-app)');
 }
 
 // Het kassa-uid van een gast (verhuurplek) is PLEK-<code> — gedeeld door wie
@@ -2537,13 +2563,16 @@ async function renderAdmin() {
     openPerUid[uid] = logLid.filter(r => !laatste || r.geregistreerd_op > laatste).reduce((s, r) => s + Number(r.totaal || 0), 0);
   }
 
-  const totalOpenstaand = Object.values(openPerUid).reduce((s, v) => s + v, 0);
+  const persoonlijk = ([, g]) => g.type !== 'intern';
+  const intern      = ([, g]) => g.type === 'intern';
+
+  const totalOpenstaand = Object.entries(gasten).filter(persoonlijk).reduce((s, [uid]) => s + (openPerUid[uid] || 0), 0);
   document.getElementById('totaal-openstaand').textContent = '€' + totalOpenstaand.toFixed(2).replace('.', ',');
 
-  const openstaandLeden = Object.entries(gasten).filter(([uid]) => openPerUid[uid] > 0);
-  document.getElementById('leden-lijst').innerHTML = openstaandLeden.length === 0
-    ? '<p style="color:var(--kr-muted);font-size:0.9rem">Geen openstaande rekeningen.</p>'
-    : openstaandLeden.map(([uid, g]) => {
+  const totalIntern = Object.entries(gasten).filter(intern).reduce((s, [uid]) => s + (openPerUid[uid] || 0), 0);
+  document.getElementById('totaal-intern').textContent = '€' + totalIntern.toFixed(2).replace('.', ',');
+
+  function lidRij([uid, g], wijze) {
     const open = openPerUid[uid] || 0;
     return `
     <div class="lid-row" style="cursor:pointer" onclick="toonRekening('${esc(uid)}')">
@@ -2552,16 +2581,29 @@ async function renderAdmin() {
         <div class="lid-plek">Plek ${esc(g.plek)}</div>
       </div>
       <span class="lid-openstaand" style="margin-right:8px">⚠️ €${Number(open).toFixed(2).replace('.', ',')}</span>
-      <button class="afrekenen-btn" onclick="event.stopPropagation();afrekenen('${esc(uid)}')">Afrekenen</button>
+      <button class="afrekenen-btn" onclick="event.stopPropagation();afrekenen('${esc(uid)}', '${wijze}')">Afrekenen</button>
       <span style="color:var(--kr-muted);margin-left:8px;font-size:0.9rem">›</span>
     </div>`;
-  }).join('');
+  }
+
+  const openstaandLeden = Object.entries(gasten).filter(persoonlijk).filter(([uid]) => openPerUid[uid] > 0);
+  document.getElementById('leden-lijst').innerHTML = openstaandLeden.length === 0
+    ? '<p style="color:var(--kr-muted);font-size:0.9rem">Geen openstaande rekeningen.</p>'
+    : openstaandLeden.map(r => lidRij(r, 'contant')).join('');
+
+  const openstaandIntern = Object.entries(gasten).filter(intern).filter(([uid]) => openPerUid[uid] > 0);
+  document.getElementById('intern-lijst').innerHTML = openstaandIntern.length === 0
+    ? '<p style="color:var(--kr-muted);font-size:0.9rem">Geen openstaande interne rekeningen.</p>'
+    : openstaandIntern.map(r => lidRij(r, 'intern')).join('');
 
   const now = new Date();
   const vandaag = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const lokaalDag = b => { const d = new Date(b.betaald_op); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
-  const betalingenVandaag = betalingen.filter(b => b.betaald_op && lokaalDag(b) === vandaag);
-  const betalingenEerder  = betalingen.filter(b => !b.betaald_op || lokaalDag(b) !== vandaag);
+  // wijze 'intern' is een interne afboeking (verenigingskosten), geen
+  // werkelijk ontvangen geld — hoort niet mee te tellen in de kasafsluiting.
+  const echteBetalingen = betalingen.filter(b => b.wijze !== 'intern');
+  const betalingenVandaag = echteBetalingen.filter(b => b.betaald_op && lokaalDag(b) === vandaag);
+  const betalingenEerder  = echteBetalingen.filter(b => !b.betaald_op || lokaalDag(b) !== vandaag);
   const totaalVandaag = betalingenVandaag.reduce((s, b) => s + Number(b.bedrag), 0);
 
   function betalingRij(b) {
@@ -2789,7 +2831,8 @@ async function gastRekentAf(wijze = 'contant') {
   }
 }
 
-async function afrekenen(uid) {
+async function afrekenen(uid, wijze) {
+  wijze = wijze || 'contant';
   const gast = gasten[uid];
   // Bereken openstaand live uit log
   const alleLog = await DB.getLog();
@@ -2801,7 +2844,7 @@ async function afrekenen(uid) {
 
   if (bedrag <= 0) { toonToast('Geen openstaand bedrag'); return; }
 
-  await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag, wijze: 'contant' });
+  await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag, wijze });
   gast.openstaand = 0;
   await DB.upsertLid(gast);
   toonToast(`✓ ${gast.naam} afgerekend — €${bedrag.toFixed(2).replace('.', ',')}`);
@@ -2828,12 +2871,30 @@ function renderLedenGrid() {
     return `<div class="lid-kaart" onclick="toonRekening('${esc(uid)}')">
       <div class="lid-kaart-avatar">${esc(initialen)}</div>
       <div>
-        <div class="lid-kaart-naam">${esc(g.naam)}${g.beheerder ? '<span class="badge-beheer">beheerder</span>' : ''}${g.type === 'gast' ? '<span class="badge-beheer" style="background:#7f8c8d">gast</span>' : ''}</div>
+        <div class="lid-kaart-naam">${esc(g.naam)}${g.beheerder ? '<span class="badge-beheer">beheerder</span>' : ''}${g.type === 'gast' ? '<span class="badge-beheer" style="background:#7f8c8d">gast</span>' : ''}${g.type === 'intern' ? '<span class="badge-beheer" style="background:#8e44ad">intern</span>' : ''}</div>
         <div class="lid-kaart-plek">Plek ${esc(g.plek)}</div>
         ${g.openstaand > 0 ? `<div class="lid-kaart-openstaand">Openstaand: €${Number(g.openstaand).toFixed(2).replace('.', ',')}</div>` : ''}
       </div>
     </div>`;
   }).join('') || '<div style="color:var(--kr-muted);font-size:0.9rem">Geen leden gevonden</div>';
+}
+
+async function voegInternAccountToe() {
+  const naam = document.getElementById('intern-naam').value.trim();
+  const code = document.getElementById('intern-code').value.trim().toUpperCase();
+  if (!naam || !code) { toonToast('⚠️ Vul naam en code in'); return; }
+  if (Object.values(gasten).some(g => g.plek?.toUpperCase() === code)) {
+    toonToast(`⚠️ Code "${code}" is al in gebruik`);
+    return;
+  }
+  const uid = crypto.randomUUID();
+  const nieuw = { uid, naam, plek: code, type: 'intern', openstaand: 0, beheerder: false };
+  gasten[uid] = nieuw;
+  await DB.upsertLid(nieuw);
+  document.getElementById('intern-naam').value = '';
+  document.getElementById('intern-code').value = '';
+  toonToast(`✓ ${naam} toegevoegd`);
+  renderLedenGrid();
 }
 
 // Zelfde doel als een kaart aanklikken in het overzicht eronder (toonRekening)
