@@ -1365,43 +1365,6 @@
     </div>
 
     <div class="lid-kaart-beheer">
-      <h3>Nieuw lid toevoegen</h3>
-      <div class="form-rij">
-        <div class="form-veld">
-          <label>Naam</label>
-          <input type="text" id="lid-naam" placeholder="Voor- en achternaam">
-        </div>
-        <div class="form-veld">
-          <label>Pleknummer</label>
-          <input type="text" id="lid-plek" placeholder="bijv. HV3">
-        </div>
-        <div class="form-veld">
-          <label>E-mailadres (voor bon)</label>
-          <input type="email" id="lid-email" placeholder="naam@voorbeeld.nl">
-        </div>
-      </div>
-      <div class="form-veld" style="margin-bottom:12px">
-        <label>Type</label>
-        <select id="lid-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('lid-pincode-blok').style.display=this.value==='lid'?'':'none'; updateBeheerderVeld('lid-type','lid-beheerder');">
-          <option value="lid">Lid (kan ook zonder bandje bestellen)</option>
-          <option value="gast">Gast (alleen met bandje)</option>
-        </select>
-      </div>
-      <div class="form-veld" id="lid-pincode-blok" style="margin-bottom:12px">
-        <label>Pincode (vereist bij bestelling zonder bandje)</label>
-        <input type="text" id="lid-pincode" placeholder="bijv. 1234" maxlength="8" inputmode="numeric" pattern="[0-9]*" style="max-width:160px">
-      </div>
-      <div class="form-veld" style="margin-bottom:12px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="lid-beheerder" style="width:16px;height:16px;accent-color:var(--kr-forest)">
-          Beheerder (toegang tot Beheer, Artikelen en Leden)
-        </label>
-        <div id="lid-beheerder-hint" style="font-size:0.78rem;color:var(--kr-muted);margin-top:2px"></div>
-      </div>
-      <button class="opslaan-btn" onclick="voegLidToe()">Lid toevoegen</button>
-    </div>
-
-    <div class="lid-kaart-beheer">
       <h3>Alle leden (<span id="leden-aantal">0</span>)</h3>
       <div class="leden-kaart-grid" id="leden-kaart-grid"></div>
     </div>
@@ -2806,33 +2769,6 @@ function selecteerLid(uid) {
   if (document.getElementById('leden-zoek')) document.getElementById('leden-zoek').value = '';
   toonScherm('producten');
   verversOpenstaandBijScan(uid);
-}
-
-async function voegLidToe() {
-  const naam = document.getElementById('lid-naam').value.trim();
-  const plek = document.getElementById('lid-plek').value.trim().toUpperCase();
-  const type = document.getElementById('lid-type').value;
-  // Nooit beheerder=true voor type 'gast', ongeacht UI-status — het kassa-uid
-  // van een gast is aan de plek gekoppeld, niet aan de persoon (zie
-  // updateBeheerderVeld()).
-  const beheerder = type !== 'gast' && document.getElementById('lid-beheerder').checked;
-  if (!naam || !plek) { toonToast('⚠️ Vul naam en pleknummer in'); return; }
-  const pincode = type === 'lid' ? document.getElementById('lid-pincode').value.trim() : null;
-  const email = document.getElementById('lid-email').value.trim() || null;
-  const uid = crypto.randomUUID();
-  const lid = { uid, naam, plek, email, openstaand: 0, beheerder, type, pincode: pincode || null };
-  gasten[uid] = lid;
-  await DB.upsertLid(lid);
-  document.getElementById('lid-naam').value = '';
-  document.getElementById('lid-plek').value = '';
-  document.getElementById('lid-email').value = '';
-  document.getElementById('lid-pincode').value = '';
-  document.getElementById('lid-type').value = 'lid';
-  document.getElementById('lid-pincode-blok').style.display = '';
-  document.getElementById('lid-beheerder').checked = false;
-  updateBeheerderVeld('lid-type', 'lid-beheerder');
-  toonToast(`✓ ${naam} (plek ${plek}) — ${type === 'gast' ? 'gast' : beheerder ? 'beheerder' : 'lid'} toegevoegd`);
-  renderLedenGrid();
 }
 
 async function normaliseerVolgorde() {
