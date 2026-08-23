@@ -1381,8 +1381,8 @@
           <input type="text" id="intern-naam" placeholder="bijv. Feestcommissie">
         </div>
         <div class="form-veld">
-          <label>Code (voor zelf-invoer, zoals een pleknummer)</label>
-          <input type="text" id="intern-code" placeholder="bijv. BESTUUR" style="text-transform:uppercase">
+          <label>Code (numeriek — in te toetsen op het numpad "Pleknummer invoeren", zoals een pleknummer)</label>
+          <input type="text" id="intern-code" placeholder="bijv. 9001" inputmode="numeric" pattern="[0-9]*">
         </div>
       </div>
       <button class="opslaan-btn" onclick="voegInternAccountToe()">Toevoegen</button>
@@ -1927,7 +1927,7 @@ function updateBewerkPlekVeld() {
   veld.disabled = !bewerkbaar;
   veld.style.background = bewerkbaar ? '' : 'var(--kr-cream)';
   veld.style.cursor = bewerkbaar ? '' : 'not-allowed';
-  hint.textContent = bewerkbaar ? '(vrij te kiezen code, bv. BESTUUR)' : (type === 'gast' ? '(gekoppeld aan het bandje)' : '(wijzigen via de reserveringen-app)');
+  hint.textContent = bewerkbaar ? '(numerieke code, net als een pleknummer, bv. 9001)' : (type === 'gast' ? '(gekoppeld aan het bandje)' : '(wijzigen via de reserveringen-app)');
 }
 
 // Het kassa-uid van een gast (verhuurplek) is PLEK-<code> — gedeeld door wie
@@ -2881,8 +2881,12 @@ function renderLedenGrid() {
 
 async function voegInternAccountToe() {
   const naam = document.getElementById('intern-naam').value.trim();
-  const code = document.getElementById('intern-code').value.trim().toUpperCase();
+  const code = document.getElementById('intern-code').value.trim();
   if (!naam || !code) { toonToast('⚠️ Vul naam en code in'); return; }
+  // "Pleknummer invoeren" op het tapscherm gebruikt een numeriek numpad
+  // (plus de vaste letterknoppen GV/HV voor bestaande pleknummer-prefixen)
+  // — een code met andere letters is daar dus nooit intoetsbaar.
+  if (!/^\d+$/.test(code)) { toonToast('⚠️ Code moet numeriek zijn (net als een pleknummer), bv. 9001'); return; }
   if (Object.values(gasten).some(g => g.plek?.toUpperCase() === code)) {
     toonToast(`⚠️ Code "${code}" is al in gebruik`);
     return;
