@@ -1869,20 +1869,24 @@ function openBewerkLid() {
   document.getElementById('bewerk-lid-modal').classList.add('open');
 }
 
-// Pleknummer van een lid (type 'lid') komt sinds de koppeling met de
-// reserveringen-app daarvandaan (Beheer > Contributie) — hier alleen-lezen
-// maken voorkomt dat een lokale wijziging bij de eerstvolgende
-// toewijzing daar gewoon weer wordt overschreven, of blijvend uit de pas
-// loopt. Gasten (verhuurplekken) hebben deze koppeling niet en blijven
-// gewoon vrij bewerkbaar.
+// Pleknummer is voor geen van beide typen hier los te wijzigen, elk om een
+// eigen reden:
+// - lid: komt sinds de koppeling met de reserveringen-app daarvandaan
+//   (Beheer > Contributie) — lokaal wijzigen zou bij de eerstvolgende
+//   toewijzing daar gewoon weer worden overschreven, of blijvend uit de
+//   pas lopen.
+// - gast: zit al vast "gebakken" in de bandje-koppeling en het kassa-uid
+//   (PLEK-<code>) — de reserveringen-app én de kassa's eigen bandjes-
+//   koppeling zoeken altijd op dat pleknummer. Los wijzigen ontkoppelt de
+//   rekening stilzwijgend van de werkelijke plek.
 function updateBewerkPlekVeld() {
-  const isLid = document.getElementById('bewerk-type').value !== 'gast';
+  const isGast = document.getElementById('bewerk-type').value === 'gast';
   const veld = document.getElementById('bewerk-plek');
   const hint = document.getElementById('bewerk-plek-hint');
-  veld.disabled = isLid;
-  veld.style.background = isLid ? 'var(--kr-cream)' : '';
-  veld.style.cursor = isLid ? 'not-allowed' : '';
-  hint.textContent = isLid ? '(wijzigen via de reserveringen-app)' : '';
+  veld.disabled = true;
+  veld.style.background = 'var(--kr-cream)';
+  veld.style.cursor = 'not-allowed';
+  hint.textContent = isGast ? '(gekoppeld aan het bandje)' : '(wijzigen via de reserveringen-app)';
 }
 
 function sluitBewerkLid() {
