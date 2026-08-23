@@ -900,7 +900,7 @@
     <div class="beheer-menu" id="beheer-menu">
       <div class="menu-slot">Administratie</div>
       <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('admin')">📊 Omzet &amp; log</button>
-      <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('leden')">👥 Leden</button>
+      <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('leden')">🔗 NFC beheer</button>
       <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('artikelen')">🛒 Artikelen</button>
       <button class="menu-lock" onclick="sluitBeheerMenu();vereisLogin('voorraad')">📦 Voorraad aanvullen</button>
       <div class="menu-slot">Instellingen</div>
@@ -983,7 +983,7 @@
       </div>
     <div class="form-veld" style="margin-bottom:12px">
       <label>Type</label>
-      <select id="bewerk-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('bewerk-pincode-blok').style.display=this.value==='lid'?'':'none'; updateBewerkPlekVeld();">
+      <select id="bewerk-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('bewerk-pincode-blok').style.display=this.value==='lid'?'':'none'; updateBewerkPlekVeld(); updateBeheerderVeld('bewerk-type','bewerk-beheerder');">
         <option value="lid">Lid (kan ook zonder bandje bestellen)</option>
         <option value="gast">Gast (alleen met bandje)</option>
       </select>
@@ -997,6 +997,7 @@
         <input type="checkbox" id="bewerk-beheerder" style="width:16px;height:16px;accent-color:var(--kr-forest)">
         Beheerder
       </label>
+      <div id="bewerk-beheerder-hint" style="font-size:0.78rem;color:var(--kr-muted);margin-top:2px"></div>
     </div>
     <div class="form-veld" style="margin-bottom:16px">
       <label>NFC-bandjes</label>
@@ -1381,7 +1382,7 @@
       </div>
       <div class="form-veld" style="margin-bottom:12px">
         <label>Type</label>
-        <select id="lid-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('lid-pincode-blok').style.display=this.value==='lid'?'':'none'">
+        <select id="lid-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('lid-pincode-blok').style.display=this.value==='lid'?'':'none'; updateBeheerderVeld('lid-type','lid-beheerder');">
           <option value="lid">Lid (kan ook zonder bandje bestellen)</option>
           <option value="gast">Gast (alleen met bandje)</option>
         </select>
@@ -1395,6 +1396,7 @@
           <input type="checkbox" id="lid-beheerder" style="width:16px;height:16px;accent-color:var(--kr-forest)">
           Beheerder (toegang tot Beheer, Artikelen en Leden)
         </label>
+        <div id="lid-beheerder-hint" style="font-size:0.78rem;color:var(--kr-muted);margin-top:2px"></div>
       </div>
       <button class="opslaan-btn" onclick="voegLidToe()">Lid toevoegen</button>
     </div>
@@ -1866,6 +1868,7 @@ function openBewerkLid() {
   document.getElementById('bewerk-email').value = g.email || '';
   renderBandjesInLidModal(uid);
   updateBewerkPlekVeld();
+  updateBeheerderVeld('bewerk-type', 'bewerk-beheerder');
   document.getElementById('bewerk-lid-modal').classList.add('open');
 }
 
@@ -1889,6 +1892,19 @@ function updateBewerkPlekVeld() {
   hint.textContent = isGast ? '(gekoppeld aan het bandje)' : '(wijzigen via de reserveringen-app)';
 }
 
+// Het kassa-uid van een gast (verhuurplek) is PLEK-<code> — gedeeld door wie
+// er ook maar op dat moment op die plek verblijft. Staat beheerder daar ooit
+// op "aan", dan erft élke toekomstige huurder van die plek automatisch
+// beheerderstoegang. Daarom hier bewust niet aan te zetten voor type 'gast'.
+function updateBeheerderVeld(typeSelectId, checkboxId) {
+  const isGast = document.getElementById(typeSelectId).value === 'gast';
+  const cb = document.getElementById(checkboxId);
+  const hint = document.getElementById(checkboxId + '-hint');
+  cb.disabled = isGast;
+  if (isGast) cb.checked = false;
+  if (hint) hint.textContent = isGast ? 'Niet beschikbaar voor gasten (het kassa-uid is aan de plek gekoppeld, niet aan de persoon)' : '';
+}
+
 function sluitBewerkLid() {
   document.getElementById('bewerk-lid-modal').classList.remove('open');
 }
@@ -1899,7 +1915,10 @@ async function slaLidwijzigingOp() {
   const plek = document.getElementById('bewerk-plek').value.trim().toUpperCase();
   const type = document.getElementById('bewerk-type').value;
   const nieuwePincode = document.getElementById('bewerk-pincode').value.trim();
-  const beheerder = document.getElementById('bewerk-beheerder').checked;
+  // Nooit beheerder=true voor type 'gast', ongeacht UI-status — het kassa-uid
+  // van een gast is aan de plek gekoppeld, niet aan de persoon (zie
+  // updateBeheerderVeld()).
+  const beheerder = type !== 'gast' && document.getElementById('bewerk-beheerder').checked;
   if (!naam || !plek) { toonToast('⚠️ Vul naam en pleknummer in'); return; }
   const g = gasten[uid];
   g.naam = naam;
@@ -2765,9 +2784,12 @@ function selecteerLid(uid) {
 async function voegLidToe() {
   const naam = document.getElementById('lid-naam').value.trim();
   const plek = document.getElementById('lid-plek').value.trim().toUpperCase();
-  const beheerder = document.getElementById('lid-beheerder').checked;
-  if (!naam || !plek) { toonToast('⚠️ Vul naam en pleknummer in'); return; }
   const type = document.getElementById('lid-type').value;
+  // Nooit beheerder=true voor type 'gast', ongeacht UI-status — het kassa-uid
+  // van een gast is aan de plek gekoppeld, niet aan de persoon (zie
+  // updateBeheerderVeld()).
+  const beheerder = type !== 'gast' && document.getElementById('lid-beheerder').checked;
+  if (!naam || !plek) { toonToast('⚠️ Vul naam en pleknummer in'); return; }
   const pincode = type === 'lid' ? document.getElementById('lid-pincode').value.trim() : null;
   const email = document.getElementById('lid-email').value.trim() || null;
   const uid = crypto.randomUUID();
@@ -2781,6 +2803,7 @@ async function voegLidToe() {
   document.getElementById('lid-type').value = 'lid';
   document.getElementById('lid-pincode-blok').style.display = '';
   document.getElementById('lid-beheerder').checked = false;
+  updateBeheerderVeld('lid-type', 'lid-beheerder');
   toonToast(`✓ ${naam} (plek ${plek}) — ${type === 'gast' ? 'gast' : beheerder ? 'beheerder' : 'lid'} toegevoegd`);
   renderLedenGrid();
 }
