@@ -984,9 +984,10 @@
     <div class="form-veld" style="margin-bottom:12px">
       <label>Type</label>
       <select id="bewerk-type" style="padding:8px 12px;border:1.5px solid var(--kr-sand);border-radius:8px;font-size:1rem;background:#fff" onchange="document.getElementById('bewerk-pincode-blok').style.display=this.value==='lid'?'':'none'; updateBewerkPlekVeld(); updateBeheerderVeld('bewerk-type','bewerk-beheerder');">
-        <option value="lid">Lid (kan ook zonder bandje bestellen)</option>
+        <option id="bewerk-type-lid-optie" value="lid">Lid (kan ook zonder bandje bestellen)</option>
         <option value="gast">Gast (alleen met bandje)</option>
       </select>
+      <div id="bewerk-type-hint" style="font-size:0.78rem;color:var(--kr-muted);margin-top:2px"></div>
     </div>
     <div class="form-veld" id="bewerk-pincode-blok" style="margin-bottom:12px">
       <label>Pincode <span id="bewerk-pincode-status" style="font-weight:normal;color:var(--kr-muted)"></span></label>
@@ -1859,6 +1860,21 @@ function openBewerkLid() {
   renderBandjesInLidModal(uid);
   updateBewerkPlekVeld();
   updateBeheerderVeld('bewerk-type', 'bewerk-beheerder');
+
+  // Een bestaande gast (verhuurplek) omzetten naar "lid" levert een
+  // kassa-uid zonder reserveringen_lid_id op — de sync herkent dat record
+  // dan niet zodra de reserveringen-app die plek ooit aan een lid toewijst,
+  // met een verweesd tweede record tot gevolg (zelfde risico als het
+  // verwijderde "Nieuw lid toevoegen"). Daarom hier geblokkeerd; lid → gast
+  // blijft wel mogelijk, dat kassa-uid heeft dan immers al een echte
+  // koppeling.
+  const lidOptie = document.getElementById('bewerk-type-lid-optie');
+  const typeHint = document.getElementById('bewerk-type-hint');
+  lidOptie.disabled = g.type === 'gast';
+  typeHint.textContent = g.type === 'gast'
+    ? 'Omzetten naar "Lid" kan hier niet — dat hoort via de reserveringen-app te lopen (plek toewijzen)'
+    : '';
+
   document.getElementById('bewerk-lid-modal').classList.add('open');
 }
 
@@ -1910,6 +1926,13 @@ async function slaLidwijzigingOp() {
   // updateBeheerderVeld()).
   const beheerder = type !== 'gast' && document.getElementById('bewerk-beheerder').checked;
   if (!naam || !plek) { toonToast('⚠️ Vul naam en pleknummer in'); return; }
+  // Vangnet naast de uitgeschakelde optie in openBewerkLid(): een bestaande
+  // gast omzetten naar "lid" levert een kassa-uid zonder
+  // reserveringen_lid_id op (zie toelichting daar).
+  if (gasten[uid]?.type === 'gast' && type === 'lid') {
+    toonToast('⚠️ Omzetten naar "Lid" kan hier niet — regel dit via de reserveringen-app');
+    return;
+  }
   const g = gasten[uid];
   g.naam = naam;
   g.plek = plek;
