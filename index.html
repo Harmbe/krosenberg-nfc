@@ -1303,7 +1303,7 @@
 
     <div class="beheer-card" style="grid-column: span 2">
       <h3>📡 Plekken &amp; Bandjes</h3>
-      <p style="font-size:0.85rem;color:var(--kr-muted);margin-bottom:12px">Maak gastenplekken aan en koppel er één of meerdere NFC-bandjes aan. Leden krijgen bandjes via hun ledenkaart.</p>
+      <p style="font-size:0.85rem;color:var(--kr-muted);margin-bottom:12px">Gastenplekken verschijnen hier automatisch vanuit de reserveringen-app — koppel er één of meerdere NFC-bandjes aan. Handmatig een pleknummer toevoegen is alleen nog nodig als de reserveringen-app niet bereikbaar is. Leden krijgen bandjes via hun ledenkaart.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-end">
         <div class="form-veld" style="margin:0;min-width:100px;flex:1">
           <label style="font-size:0.8rem">Nieuw pleknummer</label>
@@ -1594,6 +1594,29 @@ window.addEventListener('online', laadSaunaInstelling);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') laadSaunaInstelling(); });
 setInterval(() => { if (navigator.onLine) laadSaunaInstelling(); }, 60000);
 
+/** Haalt de actieve verhuurplekken op uit de reserveringen-app en maakt er
+ *  automatisch een kassarekening voor aan als die nog niet bestaat — scheelt
+ *  een beheerder het handmatig (en foutgevoelig) overtypen van elk
+ *  pleknummer via "+ Plek". Best-effort, zelfde patroon als
+ *  laadSaunaInstelling(): faalt stil als de reserveringen-app onbereikbaar is. */
+async function syncGastenplekkenVanReserveringen() {
+  try {
+    const res = await fetch(`${RESERVERINGEN_API_URL}/api/kassa/gastenplekken`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const { codes } = await res.json();
+    let nieuw = false;
+    for (const code of codes || []) {
+      if (!plekkenCache[code]) { await maakGastenplekAlsNodig(code); nieuw = true; }
+    }
+    if (nieuw) renderPlekkenLijst();
+  } catch {
+    // Offline of onbereikbaar — laatst bekende plekken blijven gelden.
+  }
+}
+window.addEventListener('online', syncGastenplekkenVanReserveringen);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncGastenplekkenVanReserveringen(); });
+setInterval(() => { if (navigator.onLine) syncGastenplekkenVanReserveringen(); }, 60000);
+
 async function init() {
   // Laad Supabase → IndexedDB (als online)
   await laadVanSupabase();
@@ -1609,6 +1632,10 @@ async function init() {
 
   // Laad bandjes-koppelingen
   bouwBandjesCaches(await DB.getBandjes());
+
+  // Ná het vullen van plekkenCache/gasten hierboven, anders denkt de sync
+  // ten onrechte dat elke plek nog ontbreekt.
+  syncGastenplekkenVanReserveringen();
 
   // Vul standaard-gasten als DB leeg is (alleen op localhost)
   if (ledenArr.length === 0) {
@@ -3137,10 +3164,10 @@ function renderPlekkenLijst() {
   }).join('');
 }
 
-async function voegPlekToe() {
-  const plek_code = document.getElementById('nieuw-plek-code').value.trim().toUpperCase();
-  if (!plek_code) { toonToast('⚠️ Vul een pleknummer in'); return; }
-  if (plekkenCache[plek_code]) { toonToast(`⚠️ Plek ${plek_code} bestaat al`); return; }
+// Gedeeld door voegPlekToe() (handmatig) en syncGastenplekkenVanReserveringen()
+// (automatisch) — doet niets als de plek al bestaat.
+async function maakGastenplekAlsNodig(plek_code) {
+  if (plekkenCache[plek_code]) return;
 
   const plek = { plek_code };
   plekkenCache[plek_code] = plek;
@@ -3153,6 +3180,14 @@ async function voegPlekToe() {
     await DB.upsertLid(entry);
     haalGastNaamOp(plek_code, lid_uid);
   }
+}
+
+async function voegPlekToe() {
+  const plek_code = document.getElementById('nieuw-plek-code').value.trim().toUpperCase();
+  if (!plek_code) { toonToast('⚠️ Vul een pleknummer in'); return; }
+  if (plekkenCache[plek_code]) { toonToast(`⚠️ Plek ${plek_code} bestaat al`); return; }
+
+  await maakGastenplekAlsNodig(plek_code);
 
   document.getElementById('nieuw-plek-code').value = '';
   renderPlekkenLijst();
