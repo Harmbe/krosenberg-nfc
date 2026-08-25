@@ -204,8 +204,7 @@
 
   .producten-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 170px));
-    justify-content: center;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 14px;
     margin-bottom: 20px;
   }
@@ -262,6 +261,9 @@
     align-items: center;
     gap: 6px;
     position: relative;
+    width: 100%;
+    max-width: 170px;
+    justify-self: center;
   }
 
   .product-btn:hover { border-color: var(--kr-accent); background: var(--kr-sand); transform: translateY(-2px); }
