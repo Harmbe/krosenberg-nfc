@@ -1661,6 +1661,13 @@ async function init() {
   // Laad bandjes-koppelingen
   bouwBandjesCaches(await DB.getBandjes());
 
+  // Bon-instellingen per categorie — voorheen alleen gevuld zodra Beheer →
+  // Artikelen geopend werd, waardoor automatisch printen bij een bestelling
+  // stil niets deed als dat scherm deze sessie nog niet bezocht was (de
+  // instelling stond dan wel goed in de database, maar categorieInstellingen
+  // was hier op dat moment nog leeg in het geheugen).
+  (await DB.getCategorieInstellingen()).forEach(r => { categorieInstellingen[r.categorie] = r; });
+
   // Ná het vullen van plekkenCache/gasten hierboven, anders denkt de sync
   // ten onrechte dat elke plek nog ontbreekt.
   syncGastenplekkenVanReserveringen();
