@@ -2591,6 +2591,23 @@ async function printBon(data) {
   } catch { toonToast('⚠️ Printer niet bereikbaar'); }
 }
 
+// Print de afrekenbon: consumpties gegroepeerd per datum, met per datum de
+// artikelen (opgeteld als hetzelfde artikel er op die dag vaker in staat) en
+// onderaan het totaal. Zelfde stille no-op als printBon() zonder printer.
+async function printAfrekening(data) {
+  const url = getPrinterUrl();
+  if (!url) return;
+  try {
+    const r = await fetch(url + '/print-afrekening', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Printserver-Sleutel': getPrinterSleutel() },
+      body: JSON.stringify(data),
+    });
+    const res = await r.json();
+    if (!res.ok) toonToast('⚠️ Printfout: ' + res.fout);
+  } catch { toonToast('⚠️ Printer niet bereikbaar'); }
+}
+
 // Stuurt de kassalade-openpuls via de printer (RJ11/RJ12-poort). Best-effort
 // zoals printBon(): zonder ingestelde printer gebeurt er stilzwijgend niets.
 async function openKassalade() {
@@ -2882,6 +2899,45 @@ function _verwerkingRegel(nr, tekst, sluit = false) {
   }
 }
 
+// Haalt de artikelregels uit één consumptie_log-rij, ongeacht of die net
+// (online) rechtstreeks via de consumptie_regels-join binnenkwam of (bij
+// offline afrekenen) uit de lokale Dexie-cache komt — die twee bronnen
+// hebben elk hun eigen vorm (zie laadVanSupabase() en voegLogToe()).
+function _regelsVanLogRij(r) {
+  if (Array.isArray(r.items)) return r.items;
+  if (Array.isArray(r.consumptie_regels)) {
+    return r.consumptie_regels.map(x => [x.product_naam, { aantal: x.aantal, prijs: x.prijs }]);
+  }
+  return [];
+}
+
+// Groepeert de openstaande log-rijen per datum en telt gelijke artikelen
+// binnen diezelfde datum bij elkaar op — voor de afrekenbon die per datum de
+// geconsumeerde artikelen toont in plaats van per losse bestelling.
+function _groepeerLogOpDatum(logRijen) {
+  const perDatum = {}; // 'YYYY-MM-DD' → { label, producten: Map(naam → {aantal, prijs}) }
+  for (const r of logRijen) {
+    const d = new Date(r.geregistreerd_op);
+    const key = isNaN(d) ? '?' : d.toISOString().slice(0, 10);
+    if (!perDatum[key]) {
+      perDatum[key] = {
+        label: isNaN(d) ? '?' : d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' }),
+        producten: new Map(),
+      };
+    }
+    for (const [naam, v] of _regelsVanLogRij(r)) {
+      const aantal = Number(v.aantal) || 1, prijs = Number(v.prijs) || 0;
+      const huidig = perDatum[key].producten.get(naam) || { aantal: 0, prijs };
+      huidig.aantal += aantal;
+      perDatum[key].producten.set(naam, huidig);
+    }
+  }
+  return Object.keys(perDatum).sort().map(key => ({
+    datum: perDatum[key].label,
+    regels: [...perDatum[key].producten.entries()],
+  }));
+}
+
 async function gastRekentAf(wijze = 'contant') {
   const gast = gasten[huidigeBandje];
 
@@ -2897,14 +2953,14 @@ async function gastRekentAf(wijze = 'contant') {
 
   // Papieren bon van de zojuist afgehandelde afrekening — ongeacht
   // betaalwijze (contant bevestigd of pin/QR bevestigd via dezelfde
-  // "Betaling ontvangen"-knop). printBon() doet zelf niets als er geen
-  // printer is ingesteld.
-  if (openLog.length > 0) {
-    printBon({
+  // "Betaling ontvangen"-knop), gegroepeerd per datum met de artikelen van
+  // die dag opgeteld. printAfrekening() doet zelf niets als er geen printer
+  // is ingesteld.
+  if (_openBetaalLog.length > 0) {
+    printAfrekening({
       naam: gast.naam, plek: gast.plek,
-      items: openLog.map(r => [r.omschrijving, { prijs: r.totaal, aantal: 1 }]),
+      groepen: _groepeerLogOpDatum(_openBetaalLog),
       totaal: betaaldBedrag,
-      toonNaam: true, toonPlek: true, toonTijd: true, toonPrijs: true,
     });
   }
 

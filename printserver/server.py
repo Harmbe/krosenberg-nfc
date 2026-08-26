@@ -66,7 +66,6 @@ def print_bon(p, data):
     p.set(align='center', bold=True, width=2, height=2)
     p.text('KRÖSENBERG\n')
     p.set(align='center', bold=False, width=1, height=1)
-    p.text('Kampeervereniging\n')
     p.text('─' * 32 + '\n')
 
     p.set(align='left')
@@ -106,6 +105,46 @@ def print_bon(p, data):
     p.text('\n\n')
     p.cut()
 
+def print_afrekening(p, data):
+    # Afrekenbon: consumpties gegroepeerd per datum (in plaats van per losse
+    # bestelling) — meerdere keren hetzelfde artikel op één dag staat hier al
+    # opgeteld op één regel (dat optellen gebeurt aan de kassa-app-kant).
+    naam    = data.get('naam', '?')
+    plek    = data.get('plek', '?')
+    groepen = data.get('groepen', [])  # [{datum, regels: [[naam, {prijs, aantal}], ...]}, ...]
+    totaal  = data.get('totaal', 0)
+
+    p.set(align='center', bold=True, width=2, height=2)
+    p.text('KRÖSENBERG\n')
+    p.set(align='center', bold=False, width=1, height=1)
+    p.text('─' * 32 + '\n')
+
+    p.set(align='left')
+    p.text(f'Gast : {naam}\n')
+    p.text(f'Plek : {plek}\n')
+    p.text('─' * 32 + '\n')
+
+    for groep in groepen:
+        p.set(bold=True)
+        p.text(f"{groep.get('datum', '?')}\n")
+        p.set(bold=False)
+        for regel in groep.get('regels', []):
+            inaam, v = regel[0], regel[1]
+            aantal, prijs = v.get('aantal', 1), v.get('prijs', 0)
+            regeltekst = f'  {aantal}x {inaam}'
+            bedrag = f'{aantal * prijs:.2f}'.replace('.', ',')
+            spaties = 32 - len(regeltekst) - len(bedrag)
+            p.text(regeltekst + ' ' * max(1, spaties) + bedrag + '\n')
+
+    p.text('─' * 32 + '\n')
+    p.set(bold=True)
+    totaal_str = 'EUR ' + f'{totaal:.2f}'.replace('.', ',')
+    label = 'TOTAAL'
+    p.text(label + ' ' * (32 - len(label) - len(totaal_str)) + totaal_str + '\n')
+    p.set(bold=False)
+    p.text('\n\n')
+    p.cut()
+
 @app.route('/print', methods=['POST'])
 def print_route():
     data = request.get_json(force=True)
@@ -125,6 +164,23 @@ def print_route():
         # usblp-driver in de kernel staat maar één open verbinding tegelijk
         # toe, dus zonder sluiten faalt elke volgende print met "Device or
         # resource busy" totdat de printserver herstart wordt.
+        if p is not None: p.close()
+
+@app.route('/print-afrekening', methods=['POST'])
+def print_afrekening_route():
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({'ok': False, 'fout': 'Geen data ontvangen'}), 400
+    p = None
+    try:
+        p = get_printer()
+        print_afrekening(p, data)
+        return jsonify({'ok': True})
+    except FileNotFoundError:
+        return jsonify({'ok': False, 'fout': f'Printer niet gevonden op {PRINTER_DEV}'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'fout': str(e)}), 500
+    finally:
         if p is not None: p.close()
 
 @app.route('/testprint', methods=['POST'])
