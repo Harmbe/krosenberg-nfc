@@ -30,6 +30,14 @@ if not PRINTSERVER_SLEUTEL:
 
 @app.before_request
 def vereis_sleutel():
+    # CORS-preflight (OPTIONS) stuurt bewust geen custom headers mee — de
+    # browser vraagt hiermee alleen toestemming vooraf. Deze blokkeren op de
+    # ontbrekende sleutel liet Flask-CORS' eigen Access-Control-Allow-*
+    # headers nooit terugkomen, waardoor de browser ook het échte verzoek
+    # (met sleutel) daarna weigerde te versturen — de sleutel-check zelf
+    # gebeurt sowieso nog op dat echte verzoek.
+    if request.method == 'OPTIONS':
+        return
     aangeboden = request.headers.get('X-Printserver-Sleutel', '')
     if not hmac.compare_digest(aangeboden, PRINTSERVER_SLEUTEL):
         return jsonify({'ok': False, 'fout': 'Ongeldige of ontbrekende printserver-sleutel'}), 401
