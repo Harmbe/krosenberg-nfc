@@ -1338,6 +1338,7 @@
       <h3>🖨️ Printer</h3>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input type="text" id="printer-url" placeholder="http://192.168.1.x:5000"
+          autocapitalize="off" autocorrect="off" spellcheck="false"
           style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--kr-leem);border-radius:8px;font-size:0.9rem"
           oninput="slaaPrinterUrlOp(this.value)">
         <input type="password" id="printer-sleutel" placeholder="Printserver-sleutel"
@@ -2502,11 +2503,17 @@ async function bevestigBestelling() {
 
 // ── Printer ──────────────────────────────────────────────────────────────────
 function getPrinterUrl() {
-  return localStorage.getItem('printer_url') || '';
+  // toLowerCase vangt ook al opgeslagen waarden op van vóór de fix hieronder
+  // (bv. "Http://..." door autocapitalize op een mobiel toetsenbord).
+  return (localStorage.getItem('printer_url') || '').toLowerCase();
 }
 
 function slaaPrinterUrlOp(url) {
-  localStorage.setItem('printer_url', url.trim());
+  // Sommige mobiele toetsenborden zetten de eerste letter automatisch als
+  // hoofdletter (bv. "Http://..."); ondanks autocapitalize="off" op het veld
+  // kan dit via plakken of autocorrectie alsnog gebeuren. De URL bestaat hier
+  // altijd uit een IP-adres en poort, dus lowercase is altijd veilig.
+  localStorage.setItem('printer_url', url.trim().toLowerCase());
 }
 
 function getPrinterSleutel() {
