@@ -48,6 +48,14 @@ PRINTER_DEV = os.environ.get('PRINTER_DEV', '/dev/usb/lp0')
 def get_printer():
     return escpos.File(PRINTER_DEV)
 
+def schrijf_regel(p, tekst):
+    # Print één tekstregel met een extra blanco regel erna. Deze printerkloon
+    # negeert het line_spacing()-commando volledig (getest met meerdere
+    # waarden op fysieke hardware: geen enkel effect), dus is een letterlijke
+    # lege regel de enige betrouwbare manier om de regels wat uit elkaar te
+    # trekken.
+    p.text(tekst + '\n\n')
+
 def print_bon(p, data):
     naam     = data.get('naam', '?')
     plek     = data.get('plek', '?')
@@ -69,9 +77,9 @@ def print_bon(p, data):
     p.text('─' * 32 + '\n')
 
     p.set(align='left')
-    if toon_naam: p.text(f'Gast : {naam}\n')
-    if toon_plek: p.text(f'Plek : {plek}\n')
-    if toon_tijd: p.text(f'Tijd : {tijdstip}\n')
+    if toon_naam: schrijf_regel(p, f'Gast : {naam}')
+    if toon_plek: schrijf_regel(p, f'Plek : {plek}')
+    if toon_tijd: schrijf_regel(p, f'Tijd : {tijdstip}')
     p.text('─' * 32 + '\n')
 
     for item in items:
@@ -87,9 +95,9 @@ def print_bon(p, data):
             bedrag = f'{aantal * prijs:.2f}'.replace('.', ',')
             # Rechts uitlijnen op 32 tekens
             spaties = 32 - len(regel) - len(bedrag)
-            p.text(regel + ' ' * max(1, spaties) + bedrag + '\n')
+            schrijf_regel(p, regel + ' ' * max(1, spaties) + bedrag)
         else:
-            p.text(regel + '\n')
+            schrijf_regel(p, regel)
 
     if toon_prijs:
         p.text('─' * 32 + '\n')
@@ -120,13 +128,13 @@ def print_afrekening(p, data):
     p.text('─' * 32 + '\n')
 
     p.set(align='left')
-    p.text(f'Gast : {naam}\n')
-    p.text(f'Plek : {plek}\n')
+    schrijf_regel(p, f'Gast : {naam}')
+    schrijf_regel(p, f'Plek : {plek}')
     p.text('─' * 32 + '\n')
 
     for groep in groepen:
         p.set(bold=True)
-        p.text(f"{groep.get('datum', '?')}\n")
+        schrijf_regel(p, f"{groep.get('datum', '?')}")
         p.set(bold=False)
         for regel in groep.get('regels', []):
             inaam, v = regel[0], regel[1]
@@ -134,7 +142,7 @@ def print_afrekening(p, data):
             regeltekst = f'  {aantal}x {inaam}'
             bedrag = f'{aantal * prijs:.2f}'.replace('.', ',')
             spaties = 32 - len(regeltekst) - len(bedrag)
-            p.text(regeltekst + ' ' * max(1, spaties) + bedrag + '\n')
+            schrijf_regel(p, regeltekst + ' ' * max(1, spaties) + bedrag)
 
     p.text('─' * 32 + '\n')
     p.set(bold=True)
@@ -191,8 +199,8 @@ def testprint():
         p.set(align='center', bold=True, width=2, height=2)
         p.text('KRÖSENBERG\n')
         p.set(align='center', bold=False, width=1, height=1)
-        p.text('Printer werkt!\n')
-        p.text(datetime.datetime.now().strftime('%d-%m-%Y %H:%M') + '\n')
+        schrijf_regel(p, 'Printer werkt!')
+        schrijf_regel(p, datetime.datetime.now().strftime('%d-%m-%Y %H:%M'))
         p.text('\n\n')
         p.cut()
         return jsonify({'ok': True})
