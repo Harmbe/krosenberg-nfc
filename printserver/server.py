@@ -84,7 +84,8 @@ def print_bon(p, data):
             inaam, aantal, prijs = item.get('naam'), item.get('aantal', 1), item.get('prijs', 0)
         regel = f'{aantal}x {inaam}'
         if toon_prijs:
-            bedrag = f'€{aantal * prijs:.2f}'.replace('.', ',')
+            # Geen euroteken op de losse regels — alleen bij TOTAAL hieronder.
+            bedrag = f'{aantal * prijs:.2f}'.replace('.', ',')
             # Rechts uitlijnen op 32 tekens
             spaties = 32 - len(regel) - len(bedrag)
             p.text(regel + ' ' * max(1, spaties) + bedrag + '\n')
@@ -94,7 +95,11 @@ def print_bon(p, data):
     if toon_prijs:
         p.text('─' * 32 + '\n')
         p.set(bold=True)
-        totaal_str = f'€{totaal:.2f}'.replace('.', ',')
+        # Deze (goedkope) printer ondersteunt geen enkele tekenset met een
+        # echt eurosymbool en ook geen UTF-8 (getest: elke codepage en rauwe
+        # UTF-8-bytes geven onleesbare tekens). "EUR" drukt op elke printer
+        # gewoon correct af.
+        totaal_str = 'EUR ' + f'{totaal:.2f}'.replace('.', ',')
         label = 'TOTAAL'
         p.text(label + ' ' * (32 - len(label) - len(totaal_str)) + totaal_str + '\n')
         p.set(bold=False)
