@@ -145,6 +145,21 @@ def testprint():
     finally:
         if p is not None: p.close()
 
+@app.route('/open-kassa', methods=['POST'])
+def open_kassa():
+    # Stuurt de kassalade-puls naar de printer (RJ11/RJ12-poort). Pin 2 is de
+    # meest gebruikelijke bedrading; als de lade hierop niet opent, is pin 5
+    # de eerste die te proberen is (zie PRINTER_CASHDRAW_PIN hieronder).
+    p = None
+    try:
+        p = get_printer()
+        p.cashdraw(int(os.environ.get('PRINTER_CASHDRAW_PIN', '2')))
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'fout': str(e)}), 500
+    finally:
+        if p is not None: p.close()
+
 @app.route('/status', methods=['GET'])
 def status():
     printer_ok = os.path.exists(PRINTER_DEV)

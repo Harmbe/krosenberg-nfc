@@ -1228,10 +1228,10 @@
     <div class="betaal-bedrag" id="betaal-bedrag">€0,00</div>
 
     <div class="betaal-keuze">
-      <button class="betaal-optie" onclick="kiesBetaalwijze('contant', event)">
+      <button class="betaal-optie" id="btn-contant" onclick="kiesBetaalwijze('contant', event)">
         <span class="opt-icon">💵</span>Contant
       </button>
-      <button class="betaal-optie" onclick="kiesBetaalwijze('qr', event)">
+      <button class="betaal-optie" id="btn-qr" onclick="kiesBetaalwijze('qr', event)">
         <span class="opt-icon">📱</span>QR / iDEAL
       </button>
     </div>
@@ -1590,6 +1590,28 @@ window.addEventListener('online', laadSaunaInstelling);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') laadSaunaInstelling(); });
 setInterval(() => { if (navigator.onLine) laadSaunaInstelling(); }, 60000);
 
+// Bepaalt of bij afrekenen naast Contant ook QR/iDEAL aangeboden wordt —
+// ingesteld bij Beheer → Instellingen → Kassa in de reserveringen-app.
+// Standaard (offline/onbereikbaar/nog nooit opgehaald) bewust 0: dan wordt
+// QR/iDEAL altijd getoond, zodat een onbereikbare reserveringen-app nooit
+// een betaalmethode blokkeert die eerder wel beschikbaar was.
+let minimumPinbedrag = Number(localStorage.getItem('minimum_pinbedrag')) || 0;
+
+async function laadMinimumPinbedrag() {
+  try {
+    const res = await fetch(`${RESERVERINGEN_API_URL}/api/kassa/minimum-pinbedrag`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    minimumPinbedrag = Number(data.bedrag) || 0;
+    localStorage.setItem('minimum_pinbedrag', String(minimumPinbedrag));
+  } catch {
+    // Offline of onbereikbaar — laatst bekende (of standaard) waarde blijft gelden.
+  }
+}
+window.addEventListener('online', laadMinimumPinbedrag);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') laadMinimumPinbedrag(); });
+setInterval(() => { if (navigator.onLine) laadMinimumPinbedrag(); }, 60000);
+
 /** Haalt de actieve verhuurplekken op uit de reserveringen-app en maakt er
  *  automatisch een kassarekening voor aan als die nog niet bestaat — scheelt
  *  een beheerder het handmatig (en foutgevoelig) overtypen van elk
@@ -1617,6 +1639,7 @@ async function init() {
   // Laad Supabase → IndexedDB (als online)
   await laadVanSupabase();
   laadSaunaInstelling();
+  laadMinimumPinbedrag();
 
   // Printer-URL/-sleutel zijn maar op één tablet ingevuld nodig; hier de
   // gedeelde waarde uit de database in de lokale cache zetten zodat elk
@@ -2568,6 +2591,18 @@ async function printBon(data) {
   } catch { toonToast('⚠️ Printer niet bereikbaar'); }
 }
 
+// Stuurt de kassalade-openpuls via de printer (RJ11/RJ12-poort). Best-effort
+// zoals printBon(): zonder ingestelde printer gebeurt er stilzwijgend niets.
+async function openKassalade() {
+  const url = getPrinterUrl();
+  if (!url) return;
+  try {
+    const r = await fetch(url + '/open-kassa', { method: 'POST', headers: { 'X-Printserver-Sleutel': getPrinterSleutel() } });
+    const res = await r.json();
+    if (!res.ok) toonToast('⚠️ Kassalade openen mislukt: ' + res.fout);
+  } catch { toonToast('⚠️ Printer niet bereikbaar — kassalade niet geopend'); }
+}
+
 async function testPrint() {
   const url = getPrinterUrl();
   if (!url) { toonToast('⚠️ Vul eerst het IP-adres van de printer in'); return; }
@@ -2738,6 +2773,12 @@ async function openBetaalscherm() {
   const berekendBedrag = openLog.reduce((s, r) => s + Number(r.totaal), 0);
   document.getElementById('betaal-bedrag').textContent = '€' + berekendBedrag.toFixed(2).replace('.', ',');
 
+  // Onder het minimum pinbedrag (Beheer → Instellingen → Kassa in de
+  // reserveringen-app) uitsluitend contant aanbieden — QR/iDEAL kost
+  // transactiekosten die bij een klein bedrag niet opwegen.
+  document.getElementById('btn-qr').style.display = berekendBedrag > minimumPinbedrag ? '' : 'none';
+  _gekozenWijze = null;
+
   // Herstel openstaand als het afwijkt
   if (Math.abs(berekendBedrag - Number(gast.openstaand)) > 0.01) {
     gast.openstaand = berekendBedrag;
@@ -2772,12 +2813,17 @@ async function openBetaalscherm() {
   toonScherm('betaal');
 }
 
+let _gekozenWijze = null;
+
 function kiesBetaalwijze(wijze, event) {
+  _gekozenWijze = wijze;
   document.querySelectorAll('.betaal-optie').forEach(b => b.classList.remove('actief'));
   event.currentTarget.classList.add('actief');
   document.getElementById('contant-blok').classList.toggle('zichtbaar', wijze === 'contant');
   document.getElementById('qr-blok').classList.toggle('zichtbaar', wijze === 'qr');
   document.getElementById('betaald-btn').style.display = '';
+
+  if (wijze === 'contant') openKassalade();
 
   if (wijze === 'qr') {
     const gast = gasten[huidigeBandje];
@@ -2819,7 +2865,7 @@ function bevestigBetaling() {
   document.getElementById('verwerking-regel2').textContent = '';
   document.getElementById('verwerking-spinner').style.display = 'block';
   document.getElementById('verwerking-overlay').style.display = 'flex';
-  gastRekentAf();   // vangt huidigeBandje op vóór toonScherm het reset
+  gastRekentAf(_gekozenWijze || 'contant');   // vangt huidigeBandje op vóór toonScherm het reset
   toonScherm('tap');
 }
 
@@ -2848,6 +2894,19 @@ async function gastRekentAf(wijze = 'contant') {
   if (isOnline && openLog.length > 0) _verwerkingRegel(2, `📧 Bon wordt verzonden…`);
   gast.openstaand = 0;
   await DB.upsertLid(gast);
+
+  // Papieren bon van de zojuist afgehandelde afrekening — ongeacht
+  // betaalwijze (contant bevestigd of pin/QR bevestigd via dezelfde
+  // "Betaling ontvangen"-knop). printBon() doet zelf niets als er geen
+  // printer is ingesteld.
+  if (openLog.length > 0) {
+    printBon({
+      naam: gast.naam, plek: gast.plek,
+      items: openLog.map(r => [r.omschrijving, { prijs: r.totaal, aantal: 1 }]),
+      totaal: betaaldBedrag,
+      toonNaam: true, toonPlek: true, toonTijd: true, toonPrijs: true,
+    });
+  }
 
   if (isOnline && openLog.length > 0) {
     fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
