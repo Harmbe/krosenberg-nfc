@@ -59,6 +59,18 @@ db.version(5).stores({
   voorraad_log: 'id, product_id',
   categorie_instellingen: 'categorie',
 });
+db.version(6).stores({
+  leden:       'uid, plek, naam',
+  producten:   'id, naam',
+  log:         'id, lid_uid',
+  betalingen:  'id, lid_uid',
+  sync_queue:  '++id, tabel, actie, [gesyncroniseerd+aangemaakt_op]',
+  plekken:     'plek_code',
+  bandjes:     'bandje_uid, koppeling_type, koppeling_id',
+  voorraad_log: 'id, product_id',
+  categorie_instellingen: 'categorie',
+  printer_instellingen: 'id',
+});
 
 // ── Supabase client ────────────────────────────────────────────────────────────
 const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -286,7 +298,7 @@ async function laadVanSupabase() {
   // Geen isOnline-gate meer — altijd proberen, de catch hieronder vangt een
   // echte netwerkfout al op (zie toelichting bij schrijf()).
   try {
-    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }, { data: categorieInstellingen }] =
+    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }, { data: categorieInstellingen }, { data: printerInstellingen }] =
       await Promise.all([
         supa.from('leden').select(LEDEN_KOLOMMEN),
         supa.from('producten').select('*'),
@@ -296,6 +308,7 @@ async function laadVanSupabase() {
         supa.from('bandjes').select('*'),
         supa.from('voorraad_log').select('*'),
         supa.from('categorie_instellingen').select('*'),
+        supa.from('printer_instellingen').select('*'),
       ]);
 
     if (leden)     await db.leden.bulkPut(leden);
@@ -309,6 +322,7 @@ async function laadVanSupabase() {
     if (bandjes)    await db.bandjes.bulkPut(bandjes);
     if (voorraadLog) await db.voorraad_log.bulkPut(voorraadLog);
     if (categorieInstellingen) await db.categorie_instellingen.bulkPut(categorieInstellingen);
+    if (printerInstellingen) await db.printer_instellingen.bulkPut(printerInstellingen);
   } catch (e) { console.warn('Supabase laden mislukt, gebruik lokale data', e); }
 }
 
@@ -358,6 +372,14 @@ const DB = {
   },
   async getCategorieInstellingen() { return db.categorie_instellingen.toArray(); },
   async upsertCategorieInstelling(instelling) { await schrijf('categorie_instellingen', 'upsert', instelling); },
+
+  // Eén gedeelde rij (id 'globaal') zodat printer-URL en -sleutel maar op één
+  // tablet ingevuld hoeven te worden en daarna overal beschikbaar zijn —
+  // zelfde opzet als categorie_instellingen hierboven.
+  async getPrinterInstellingen() { return db.printer_instellingen.get('globaal'); },
+  async upsertPrinterInstelling(instelling) {
+    await schrijf('printer_instellingen', 'upsert', { id: 'globaal', ...instelling, bijgewerkt_op: new Date().toISOString() });
+  },
 
   async getLog()       { return (await db.log.toArray()).sort((a,b) => b.geregistreerd_op?.localeCompare(a.geregistreerd_op)); },
   async getBetalingen(){ return (await db.betalingen.toArray()).sort((a,b) => b.betaald_op?.localeCompare(a.betaald_op)); },

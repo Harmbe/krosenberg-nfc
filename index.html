@@ -1618,6 +1618,15 @@ async function init() {
   await laadVanSupabase();
   laadSaunaInstelling();
 
+  // Printer-URL/-sleutel zijn maar op één tablet ingevuld nodig; hier de
+  // gedeelde waarde uit de database in de lokale cache zetten zodat elk
+  // ander (ook nieuw) toestel er automatisch mee kan printen. Alleen
+  // overschrijven als er een waarde ís — zo blijft een net op dít toestel
+  // ingevulde, nog niet gesyncte waarde intact.
+  const printerInst = await DB.getPrinterInstellingen();
+  if (printerInst?.printer_url) localStorage.setItem('printer_url', printerInst.printer_url.toLowerCase());
+  if (printerInst?.printer_sleutel) localStorage.setItem('printer_sleutel', printerInst.printer_sleutel);
+
   // Laad in-memory cache vanuit IndexedDB
   const ledenArr = await DB.getLeden();
   ledenArr.forEach(l => { gasten[l.uid] = l; });
@@ -2513,7 +2522,9 @@ function slaaPrinterUrlOp(url) {
   // hoofdletter (bv. "Http://..."); ondanks autocapitalize="off" op het veld
   // kan dit via plakken of autocorrectie alsnog gebeuren. De URL bestaat hier
   // altijd uit een IP-adres en poort, dus lowercase is altijd veilig.
-  localStorage.setItem('printer_url', url.trim().toLowerCase());
+  const genormaliseerd = url.trim().toLowerCase();
+  localStorage.setItem('printer_url', genormaliseerd);
+  DB.upsertPrinterInstelling({ printer_url: genormaliseerd, printer_sleutel: getPrinterSleutel() });
 }
 
 function getPrinterSleutel() {
@@ -2521,7 +2532,9 @@ function getPrinterSleutel() {
 }
 
 function slaaPrinterSleutelOp(sleutel) {
-  localStorage.setItem('printer_sleutel', sleutel.trim());
+  const getrimd = sleutel.trim();
+  localStorage.setItem('printer_sleutel', getrimd);
+  DB.upsertPrinterInstelling({ printer_url: getPrinterUrl(), printer_sleutel: getrimd });
 }
 
 function slaaAutoPrintOp(aan) {
