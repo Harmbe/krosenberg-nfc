@@ -2517,24 +2517,33 @@ function getPrinterUrl() {
   return (localStorage.getItem('printer_url') || '').toLowerCase();
 }
 
-function slaaPrinterUrlOp(url) {
+async function slaaPrinterUrlOp(url) {
   // Sommige mobiele toetsenborden zetten de eerste letter automatisch als
   // hoofdletter (bv. "Http://..."); ondanks autocapitalize="off" op het veld
   // kan dit via plakken of autocorrectie alsnog gebeuren. De URL bestaat hier
   // altijd uit een IP-adres en poort, dus lowercase is altijd veilig.
   const genormaliseerd = url.trim().toLowerCase();
   localStorage.setItem('printer_url', genormaliseerd);
-  DB.upsertPrinterInstelling({ printer_url: genormaliseerd, printer_sleutel: getPrinterSleutel() });
+  // Nooit een leeg veld naar de gedeelde instelling pushen — anders wist een
+  // half ingevuld formulier op één tablet de waarde voor alle andere
+  // tablets. En de andere kolom komt uit de database zelf (niet uit de
+  // lokale cache van dit toestel), want een net geopend/nieuw toestel heeft
+  // lokaal nog niets staan terwijl de database wél de juiste sleutel heeft.
+  if (!genormaliseerd) return;
+  const huidig = await DB.getPrinterInstellingen();
+  await DB.upsertPrinterInstelling({ printer_url: genormaliseerd, printer_sleutel: huidig?.printer_sleutel || '' });
 }
 
 function getPrinterSleutel() {
   return localStorage.getItem('printer_sleutel') || '';
 }
 
-function slaaPrinterSleutelOp(sleutel) {
+async function slaaPrinterSleutelOp(sleutel) {
   const getrimd = sleutel.trim();
   localStorage.setItem('printer_sleutel', getrimd);
-  DB.upsertPrinterInstelling({ printer_url: getPrinterUrl(), printer_sleutel: getrimd });
+  if (!getrimd) return;
+  const huidig = await DB.getPrinterInstellingen();
+  await DB.upsertPrinterInstelling({ printer_url: huidig?.printer_url || '', printer_sleutel: getrimd });
 }
 
 function slaaAutoPrintOp(aan) {
