@@ -106,6 +106,7 @@ def print_route():
     data = request.get_json(force=True)
     if not data:
         return jsonify({'ok': False, 'fout': 'Geen data ontvangen'}), 400
+    p = None
     try:
         p = get_printer()
         print_bon(p, data)
@@ -114,9 +115,16 @@ def print_route():
         return jsonify({'ok': False, 'fout': f'Printer niet gevonden op {PRINTER_DEV}'}), 503
     except Exception as e:
         return jsonify({'ok': False, 'fout': str(e)}), 500
+    finally:
+        # Zonder dit blijft het device-bestand open staan na elke print. De
+        # usblp-driver in de kernel staat maar één open verbinding tegelijk
+        # toe, dus zonder sluiten faalt elke volgende print met "Device or
+        # resource busy" totdat de printserver herstart wordt.
+        if p is not None: p.close()
 
 @app.route('/testprint', methods=['POST'])
 def testprint():
+    p = None
     try:
         p = get_printer()
         p.set(align='center', bold=True, width=2, height=2)
@@ -129,6 +137,8 @@ def testprint():
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'ok': False, 'fout': str(e)}), 500
+    finally:
+        if p is not None: p.close()
 
 @app.route('/status', methods=['GET'])
 def status():
