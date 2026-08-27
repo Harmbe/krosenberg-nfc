@@ -415,7 +415,7 @@
       <div class="rol">
         <div class="rol-doet">Wie is lid</div>
         <div class="naam">Reserveringen-app</div>
-        <p>Een eenmalig ingevoerde ledenlijst — naam en e-mailadres — gekoppeld aan een pleknummer. Wie daarin voorkomt, is lid; wie niet, is gast. Dit wordt de enige plek waar dat onderscheid vandaan komt.</p>
+        <p>Een ledenlijst — naam en e-mailadres — gekoppeld aan een pleknummer. Wie daarin voorkomt, is lid; wie niet, is gast. Dit is de enige plek waar dat onderscheid vandaan komt.</p>
       </div>
       <div class="rol">
         <div class="rol-doet">Wie mag kamperen</div>
@@ -431,9 +431,14 @@
 
     <p class="measure">De kassa-app hangt onder de reserveringen-app: die weet al welke plek bij welk bandje hoort, en haalt de naam daar op. Diezelfde koppeling — plek aan lid — bepaalt straks ook op welke grootboekrekening een overnachting terechtkomt.</p>
 
-    <div class="callout gat">
-      <div class="label">Hier moet de app worden uitgebreid</div>
-      <p>Die ledenlijst en de koppeling aan een pleknummer bestaan nog niet: de reserveringen-app kent nu alleen een <code>gast</code>-record per boeking, met een los, optioneel veld <code>nfn_lidnummer</code> — geen betrouwbare vlag, en (zoals hierboven) sowieso niet het juiste onderscheid. Nodig is een nieuwe, blijvende ledentabel (naam, e-mail) met een koppeling naar <code>plek</code>, eenmalig gevuld en daarna alleen bijgewerkt bij mutaties.</p>
+    <div class="callout">
+      <div class="label">Bestond al, bleek achteraf</div>
+      <p>Dit had ik fout in de vorige versie: ik dacht dat deze ledenlijst nog gebouwd moest worden. Bij het uitzoeken bleek de reserveringen-app hem al te hebben — <code>lid_account</code> (naam, e-mail) gekoppeld via <code>plek.eigenaar_lid_id</code>, gebouwd voor de contributiemodule en instelbaar in Beheer bij elke vaste plek. Alleen kwam die koppeling nergens naar buiten: de kassa kende alleen <code>/api/kassa/gastenplekken</code>, en dat endpoint geeft juist expliciet <em>geen</em> vaste plekken terug. Ik heb er een nieuw endpoint bij gezet, <code>/api/kassa/ledenplekken</code>, dat teruggeeft welke pleknummers aan een lid gekoppeld zijn — zelfde publieke, ongeauthenticeerde opzet als de bestaande kassa-endpoints, en zonder naam of e-mailadres erin, want die heeft de kassa hier niet voor nodig. Die stap is dus al gedaan; niet meer iets om in te plannen.</p>
+    </div>
+
+    <div class="callout keuze">
+      <div class="label">Wat nog niet gedekt is</div>
+      <p>De koppeling loopt via <code>plek.eigenaar_lid_id</code>, en dat veld bestaat alleen bij vaste plekken — de jaarplaatsen. Een lid dat incidenteel een verhuurplek boekt in plaats van de eigen vaste plek, wordt daar dus niet als lid herkend. Hoe vaak dat voorkomt en of het de moeite waard is om ook dát te dekken, is een vraag voor later — niet iets wat de rest van dit voorstel blokkeert.</p>
     </div>
   </section>
 
@@ -476,23 +481,31 @@
     <h2>Het boekingsmodel: de dagstaat</h2>
     <p class="measure">Een drukke zaterdag levert honderden losse consumpties op. Die stuk voor stuk naar het grootboek sturen zou de boekhouding onleesbaar maken. In plaats daarvan boeken we per dag één samengevatte transactie per bron — precies zoals een kantine dat met de hand ook zou doen.</p>
 
-    <h3>Kantine</h3>
-    <p class="measure">De kassa houdt openstaande bedragen per persoon bij. Geld beweegt pas bij het afrekenen, en dát is het moment waarop we boeken:</p>
+    <h3>De kassa</h3>
+    <p class="measure">De kassa houdt openstaande bedragen per persoon bij. Geld beweegt pas bij het afrekenen, en dát is het moment waarop we boeken. Elk artikel staat er al met een categorie — <em>drank, eten, ijs, sauna, wasmachine/droger, overig</em> — juist omdat deze zes apart geboekt moeten kunnen worden. De dagstaat volgt die indeling: één transactie per dag, met per categorie een eigen creditregel in plaats van één totaalbedrag.</p>
 
     <div class="journaal">
-      <div class="kop">Dagstaat kantine · 27-08-2026 · ref <span class="num">KASSA-2026-08-27</span></div>
+      <div class="kop">Dagstaat kassa · 27-08-2026 · ref <span class="num">KASSA-2026-08-27</span></div>
       <div class="regels">
         <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10030</span> Kas kantine</span><span class="bedrag">184,50</span></div>
         <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10010</span> Bankrekening <span style="color:var(--ink-faint)">(pin)</span></span><span class="bedrag">312,75</span></div>
-        <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">83010</span> Kantine opbrengsten</span><span class="bedrag">497,25</span></div>
+        <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">83010</span> Kantine opbrengsten <span style="color:var(--ink-faint)">— drank</span></span><span class="bedrag">301,40</span></div>
+        <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">83020</span> Culicom opbrengsten <span style="color:var(--ink-faint)">— eten</span></span><span class="bedrag">142,85</span></div>
+        <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">84060</span> Sauna opbrengsten</span><span class="bedrag">38,00</span></div>
+        <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">84040</span> Wasmachine</span><span class="bedrag">15,00</span></div>
       </div>
     </div>
 
-    <p class="measure">Culicom loopt langs dezelfde weg naar <code>83020</code>. De splitsing contant/pin heeft de kassa al, want die bepaalt ook of de kassalade opengaat.</p>
+    <p class="measure">De splitsing contant/pin heeft de kassa al, want die bepaalt ook of de kassalade opengaat.</p>
+
+    <div class="callout gat">
+      <div class="label">Twee dingen te bevestigen</div>
+      <p><strong>Sauna → <code>84060</code></strong> en <strong>wasmachine/droger → <code>84040</code></strong> zijn eenduidig: elk heeft precies één rekening met die naam. <strong>Drank en eten</strong> zijn dat niet — ik neem aan dat die naar <code>83010 Kantine</code> respectievelijk <code>83020 Culicom</code> gaan, maar weet niet zeker of dat de bedoelde verdeling is of dat "Culicom" iets specifieks aanduidt (bijvoorbeeld een aparte kookactiviteit, los van wat er als "eten" over de toonbank gaat). En voor <strong>ijs</strong> en <strong>overig</strong> is er geen voor de hand liggende rekening — die moeten ergens landen, al is het voorlopig op een verzamelrekening.</p>
+    </div>
 
     <div class="callout keuze">
       <div class="label">Bewuste keuze</div>
-      <p>De omzet valt op de dag van betálen, niet op de dag van consumeren. Wie de hele week aftapt en zondag afrekent, telt dus mee op zondag. Dat is voor een kantine heel normaal en scheelt een debiteurenadministratie per gast. De keerzijde: wat op 31 december nog openstaat, is dat jaar nog niet geboekt. De kassa kan daarvoor per jaareinde één totaalbedrag opleveren, zodat u dat met één memoriaalboeking rechttrekt.</p>
+      <p>De omzet valt op de dag van betálen, niet op de dag van consumeren. Wie de hele week aftapt en zondag afrekent, telt dus mee op zondag. Dat is voor een kantine heel normaal en scheelt een debiteurenadministratie per gast. De keerzijde: wat op 31 december nog openstaat, is dat jaar nog niet geboekt. De kassa kan daarvoor per jaareinde één totaalbedrag per categorie opleveren, zodat je dat met een memoriaalboeking rechttrekt.</p>
     </div>
 
     <h3>Reserveringen</h3>
@@ -521,7 +534,7 @@
 
     <div class="callout gat">
       <div class="label">Hier moet de app ook worden uitgebreid</div>
-      <p>De reserveringen-app rekent nu met één getal <code>aantal_personen</code> en één <code>bedrag_totaal</code>. Om op bovenstaande rekeningen te kunnen boeken, moet een boeking gaan bijhouden hóéveel volwassenen, tieners, honden en logees erbij horen. Zonder die uitsplitsing kan de omzet alleen op één verzamelrekening landen, en verliest u het inzicht dat het huidige rekeningschema juist biedt.</p>
+      <p>De reserveringen-app rekent nu met één getal <code>aantal_personen</code> en één <code>bedrag_totaal</code>. Om op bovenstaande rekeningen te kunnen boeken, moet een boeking gaan bijhouden hóéveel volwassenen, tieners, honden en logees erbij horen. Zonder die uitsplitsing kan de omzet alleen op één verzamelrekening landen, en verlies je het inzicht dat het huidige rekeningschema juist biedt.</p>
     </div>
 
     <div class="callout">
@@ -536,13 +549,13 @@
 
     <div class="scherm">
       <div class="balk">Beheer · Boeken naar Conscribo</div>
-      <div class="rij"><span>Kantine — zaterdag 23 augustus</span><span class="bedrag">€ 497,25</span><span class="pil klaar">geboekt</span></div>
-      <div class="rij"><span>Kantine — zondag 24 augustus</span><span class="bedrag">€ 213,80</span><button class="knop">Boeken</button></div>
+      <div class="rij"><span>Kassa — zaterdag 23 augustus</span><span class="bedrag">€ 497,25</span><span class="pil klaar">geboekt</span></div>
+      <div class="rij"><span>Kassa — zondag 24 augustus</span><span class="bedrag">€ 213,80</span><button class="knop">Boeken</button></div>
       <div class="rij"><span>Reserveringen — week 34</span><span class="bedrag">€ 1.284,00</span><button class="knop">Boeken</button></div>
-      <div class="rij"><span>Kantine — maandag 25 augustus</span><span class="bedrag">€ 46,10</span><span class="pil wacht">dag loopt nog</span></div>
+      <div class="rij"><span>Kassa — maandag 25 augustus</span><span class="bedrag">€ 46,10</span><span class="pil wacht">dag loopt nog</span></div>
     </div>
 
-    <p class="measure">Doorklikken op een regel toont de onderliggende bonnen en de journaalpost die eruit volgt, zodat controleren geen kwestie van vertrouwen is. Een geboekte regel toont het transactienummer uit Conscribo en is niet nog eens te boeken.</p>
+    <p class="measure">Eén regel per dag, ook al zit er drank, eten, sauna en wasserette in — doorklikken laat de creditregels per categorie zien, de onderliggende bonnen, en de journaalpost die eruit volgt. Zo is controleren geen kwestie van vertrouwen. Een geboekte regel toont het transactienummer uit Conscribo en is niet nog eens te boeken.</p>
   </section>
 
   <section>
@@ -576,32 +589,37 @@
   </section>
 
   <section>
-    <h2>Uitrol in vier stappen</h2>
+    <h2>Uitrol in stappen</h2>
     <p class="measure">In het grootboek staat al een complete parallelle set rekeningen met <code>TEST:</code> ervoor — <code>83015</code> naast <code>83010</code>, <code>10035</code> naast <code>10030</code>, en zo verder. Iemand heeft dit dus al eens voorbereid. Dat is een cadeautje: we kunnen daarop proefdraaien zonder de echte cijfers te raken.</p>
 
     <div class="fasen">
       <div class="fase">
         <span class="nr">01</span>
         <span class="titel">Proefdraaien op de TEST-rekeningen</span>
-        <p>De kantine-dagstaat een paar weken naar de TEST-rekeningen boeken en naast de handmatige boeking leggen. Wijkt er iets af, dan kost dat niets. Dit is ook het moment om te horen van wie die rekeningen zijn en of er al een plan achter zat.</p>
+        <p>De kassa-dagstaat, met alle vier de categorieën, een paar weken naar de TEST-rekeningen boeken en naast de handmatige boeking leggen. Wijkt er iets af, dan kost dat niets. Dit is ook het moment om te horen van wie die rekeningen zijn en of er al een plan achter zat.</p>
       </div>
       <div class="fase">
         <span class="nr">02</span>
-        <span class="titel">Kantine live</span>
-        <p>De eenvoudigste stroom: één opbrengstrekening, twee betaalwijzen. Zodra de proef klopt, gaat de dagstaat naar <code>83010</code> en <code>83020</code>.</p>
+        <span class="titel">Sauna en wasserette live</span>
+        <p>Deze twee kunnen als eerste, want de rekeningen zijn eenduidig: <code>84060</code> en <code>84040</code> hebben elk maar één mogelijke betekenis. Geen aanname nodig, dus geen reden om te wachten.</p>
       </div>
       <div class="fase">
         <span class="nr">03</span>
-        <span class="titel">Ledenlijst en plekkoppeling</span>
-        <p>De ledentabel (naam, e-mail) en de koppeling aan een pleknummer bouwen, en eenmalig vullen. Dit is de voorwaarde voor alles wat hierna komt — zonder deze stap kan geen enkele boeking als lid of gast worden herkend.</p>
+        <span class="titel">Drank en eten live</span>
+        <p>Zodra bevestigd is of <code>83010</code>/<code>83020</code> inderdaad drank/eten zijn en waar ijs en overig moeten landen, gaat de rest van de kassa-dagstaat ook naar het grootboek.</p>
       </div>
       <div class="fase">
         <span class="nr">04</span>
+        <span class="titel">Ledenlijst en plekkoppeling <span class="pil klaar" style="margin-left:0.5em">klaar</span></span>
+        <p>Bleek grotendeels al te bestaan (zie hierboven) — de reserveringen-app geeft nu aan de kassa door welke pleknummers aan een lid horen. Dit was de voorwaarde voor de volgende stap: zonder dit kan geen enkele boeking als lid of gast worden herkend.</p>
+      </div>
+      <div class="fase">
+        <span class="nr">05</span>
         <span class="titel">Reserveringen voorbereiden</span>
         <p>De uitsplitsing naar volwassenen, tieners, honden en logees in de app. Pas daarna boeken. Deze stap is groter dan de eerste twee samen.</p>
       </div>
       <div class="fase">
-        <span class="nr">05</span>
+        <span class="nr">06</span>
         <span class="titel">Desgewenst automatisch</span>
         <p>Loopt het een seizoen goed, dan kan de dagstaat van gisteren 's nachts vanzelf worden geboekt. Het beheerscherm blijft bestaan als controle achteraf. Dit is een keuze, geen eindstation.</p>
       </div>
@@ -609,21 +627,22 @@
   </section>
 
   <section>
-    <h2>Wat we van u nodig hebben</h2>
+    <h2>Wat we van jou nodig hebben</h2>
     <ul class="measure">
       <li><strong>Een aparte API-gebruiker in Conscribo</strong>, met schrijfrechten op de financiële administratie. Niet een persoonlijk account: die rechten moeten los in te trekken zijn.</li>
       <li><strong>Duidelijkheid over de TEST-rekeningen</strong>: lopend werk of restant van een eerdere poging?</li>
+      <li><strong>Bevestiging van de rekeningen voor drank en eten</strong>: is <code>83010 Kantine</code> / <code>83020 Culicom</code> inderdaad die verdeling, en waar horen <strong>ijs</strong> en <strong>overig</strong> — bestaande rekening of nieuwe?</li>
       <li><strong>Een voorkeur voor het ritme</strong>: per dag boeken, of per week samengevat? Per dag geeft het fijnste beeld, per week het kortste lijstje.</li>
     </ul>
 
     <div class="callout keuze">
       <div class="label">Aanbeveling</div>
-      <p>Begin bij stap 1 en beslis pas over volledige automatisering als u een seizoen hebt gezien dat de bedragen kloppen. De winst zit niet in het wegautomatiseren van de laatste klik, maar in het verdwijnen van het overtypen.</p>
+      <p>Begin bij stap 1 en beslis pas over volledige automatisering als je een seizoen hebt gezien dat de bedragen kloppen. De winst zit niet in het wegautomatiseren van de laatste klik, maar in het verdwijnen van het overtypen.</p>
     </div>
   </section>
 
   <footer>
-    Opgesteld op basis van een read-only verkenning van de Conscribo-administratie (augustus 2026), het datamodel van de reserveringen-app en de kassa-app. Er is bij die verkenning niets in de administratie gewijzigd.
+    Opgesteld op basis van een read-only verkenning van de Conscribo-administratie en het datamodel van de reserveringen-app en de kassa-app (augustus 2026). Er is bij die verkenning niets in Conscribo gewijzigd. Het endpoint <code>/api/kassa/ledenplekken</code> in de reserveringen-app is wél gebouwd en gepusht — puur leesend, geen bestaande route of tabel aangepast.
   </footer>
 
 </div>
