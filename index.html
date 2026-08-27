@@ -2941,8 +2941,40 @@ let _huidigeQrBetalingId = null;
 function stopQrPolling() {
   if (_qrPollTimer) { clearTimeout(_qrPollTimer); _qrPollTimer = null; }
   _huidigeQrBetalingId = null;
+  _qrPollNu = null;
+  geefQrWakeLockVrij();
   document.getElementById('qr-wacht-tekst').style.display = 'none';
 }
+
+let _qrWakeLock = null;
+
+// De tablet dimt/vergrendelt het scherm makkelijk terwijl de gast juist op
+// zíjn eigen telefoon aan het afronden is — precies wanneer we willen blijven
+// pollen. Wake Lock houdt het scherm zoveel mogelijk wakker zolang er een QR-
+// betaling open staat (best-effort: niet overal ondersteund, geen probleem
+// als het niet lukt, want de vangnetten hieronder werken sowieso).
+async function vraagQrWakeLock() {
+  try {
+    if ('wakeLock' in navigator) _qrWakeLock = await navigator.wakeLock.request('screen');
+  } catch { /* geen wake lock beschikbaar — geen probleem, zie vangnetten hieronder */ }
+}
+
+function geefQrWakeLockVrij() {
+  if (_qrWakeLock) { _qrWakeLock.release().catch(() => {}); _qrWakeLock = null; }
+}
+
+// Vangnet: als het scherm ondanks de wake lock toch even is gedimd/vergrendeld
+// geweest (of de verbinding kort weg was), kan de setTimeout-cyclus hierboven
+// door de browser/het OS flink vertraagd zijn. Bij terugkeer meteen zelf een
+// extra check doen in plaats van te wachten op de volgende timer-tick — zelfde
+// patroon als elders in dit bestand (bv. laadSaunaInstelling).
+let _qrPollNu = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && _qrPollNu) { clearTimeout(_qrPollTimer); _qrPollTimer = null; _qrPollNu(); }
+});
+window.addEventListener('online', () => {
+  if (_qrPollNu) { clearTimeout(_qrPollTimer); _qrPollTimer = null; _qrPollNu(); }
+});
 
 async function startQrBetaling() {
   const uidOpMoment = huidigeBandje; // vangt op vóór eventuele navigatie tijdens de aanvraag
@@ -2988,6 +3020,7 @@ async function startQrBetaling() {
 
 function startQrPolling(uidOpMoment, betalingId, gast) {
   _huidigeQrBetalingId = betalingId;
+  vraagQrWakeLock();
 
   async function poll() {
     if (_huidigeQrBetalingId !== betalingId) return; // ondertussen gestopt of vervangen
@@ -3014,6 +3047,7 @@ function startQrPolling(uidOpMoment, betalingId, gast) {
     }
     _qrPollTimer = setTimeout(poll, 2500);
   }
+  _qrPollNu = poll;
   poll();
 }
 
