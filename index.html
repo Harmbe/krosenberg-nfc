@@ -1262,13 +1262,15 @@
 
     <div class="qr-blok" id="qr-blok">
       <canvas id="qr-canvas"></canvas>
+      <div id="qr-status" style="display:none;padding:20px 10px;color:var(--kr-muted);font-size:0.9rem;min-height:80px;display:flex;align-items:center;justify-content:center;text-align:center"></div>
       <div class="qr-info">Laat de gast deze QR-code scannen</div>
       <div class="qr-bedrag-tekst" id="qr-bedrag-tekst"></div>
+      <div id="qr-wacht-tekst" style="display:none;font-size:0.85rem;color:var(--kr-muted);margin-top:4px">⏳ Wacht op betaling — dit scherm bevestigt zelf zodra Mollie het meldt</div>
     </div>
 
     <button class="betaald-btn" id="betaald-btn" style="display:none" onclick="bevestigBetaling()">✓ Betaling ontvangen</button>
     <br>
-    <button class="betaal-terug" onclick="toonScherm('producten')">← Terug</button>
+    <button class="betaal-terug" onclick="stopQrPolling();toonScherm('producten')">← Terug</button>
   </div>
 
   <div class="betaal-log-kaart">
@@ -2806,6 +2808,7 @@ function updateAfrekenenBlok() {
 }
 
 async function openBetaalscherm() {
+  stopQrPolling(); // vangnet: nooit een poll van een vorige gast laten doorlopen
   const gast = gasten[huidigeBandje];
   document.getElementById('betaal-naam').textContent = gast.naam + ' · Plek ' + gast.plek;
   // Bedrag wordt na het laden van openLog opnieuw gezet vanuit het log
@@ -2889,41 +2892,151 @@ function kiesBetaalwijze(wijze, event) {
   event.currentTarget.classList.add('actief');
   document.getElementById('contant-blok').classList.toggle('zichtbaar', wijze === 'contant');
   document.getElementById('qr-blok').classList.toggle('zichtbaar', wijze === 'qr');
-  document.getElementById('betaald-btn').style.display = '';
+  // Bij QR geen "Betaling ontvangen"-knop: die bevestiging gebeurt straks
+  // automatisch zodra Mollie de betaling meldt (zie startQrPolling). Een
+  // handmatige knop ernaast zou, als de gast toch al via Mollie betaalde,
+  // de omzet kunnen verdubbelen — één keer geschreven door de webhook,
+  // nog een keer door de klik.
+  document.getElementById('betaald-btn').style.display = wijze === 'contant' ? '' : 'none';
+
+  stopQrPolling(); // een eventuele vorige poll-cyclus (andere wijze, of opnieuw gekozen) altijd eerst stoppen
 
   if (wijze === 'contant') openKassalade();
-
-  if (wijze === 'qr') {
-    const gast = gasten[huidigeBandje];
-    const bedrag = gast.openstaand.toFixed(2);
-    // Demo betaal-URL (in productie: Mollie of Tikkie link)
-    const url = `https://betalen.krosenberg.nl/?bedrag=${bedrag}&naam=${encodeURIComponent(gast.naam)}&plek=${gast.plek}`;
-    tekenQR(url, bedrag);
-  }
+  if (wijze === 'qr') startQrBetaling();
 }
 
-function tekenQR(url, bedrag) {
+// Tekent een QR-code die naar `url` verwijst (goQR.me zet tekst om in een
+// afbeelding — weet zelf niets van Mollie, dus dezelfde functie blijft
+// bruikbaar voor een echte checkout-link).
+function tekenQR(url) {
+  document.getElementById('qr-status').style.display = 'none';
   const canvas = document.getElementById('qr-canvas');
+  canvas.style.display = '';
   const ctx = canvas.getContext('2d');
   const size = 200;
   canvas.width = size;
   canvas.height = size;
 
-  // Simpele QR-demo via externe API (goQR.me) — vervang door Mollie link in productie
   const img = new Image();
   img.onload = () => ctx.drawImage(img, 0, 0, size, size);
-  img.onerror = () => {
-    ctx.fillStyle = '#f4f0e8';
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#2d4a1e';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('QR niet beschikbaar', size/2, size/2 - 10);
-    ctx.font = '12px sans-serif';
-    ctx.fillText('(geen internet)', size/2, size/2 + 10);
-  };
+  img.onerror = () => tekenQRStatus('⚠️ QR niet beschikbaar (geen internet)');
   img.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
-  document.getElementById('qr-bedrag-tekst').textContent = `Te betalen: €${parseFloat(bedrag).toFixed(2).replace('.', ',')}`;
+}
+
+// Toont een statusmelding in plaats van de QR-code (bezig/fout/gesimuleerd).
+function tekenQRStatus(tekst) {
+  document.getElementById('qr-canvas').style.display = 'none';
+  const el = document.getElementById('qr-status');
+  el.textContent = tekst;
+  el.style.display = 'flex';
+}
+
+let _qrPollTimer = null;
+let _huidigeQrBetalingId = null;
+
+// Stopt een lopende poll-cyclus — bij het kiezen van een andere betaalwijze,
+// terug-navigeren, of opnieuw beginnen. Zonder dit zou een oude poll op de
+// achtergrond kunnen doorlopen en een verouderde "betaald"-melding tonen
+// nadat de kassa allang met iets anders bezig is.
+function stopQrPolling() {
+  if (_qrPollTimer) { clearTimeout(_qrPollTimer); _qrPollTimer = null; }
+  _huidigeQrBetalingId = null;
+  document.getElementById('qr-wacht-tekst').style.display = 'none';
+}
+
+async function startQrBetaling() {
+  const uidOpMoment = huidigeBandje; // vangt op vóór eventuele navigatie tijdens de aanvraag
+  const gast = gasten[uidOpMoment];
+  tekenQRStatus('⏳ Betaallink aanmaken…');
+  document.getElementById('qr-bedrag-tekst').textContent = '';
+
+  let data;
+  try {
+    const res = await fetch(`${RESERVERINGEN_API_URL}/api/kassa/mollie-betaling`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: uidOpMoment }),
+    });
+    data = await res.json();
+  } catch {
+    tekenQRStatus('⚠️ Kon geen betaallink aanmaken (geen verbinding)');
+    return;
+  }
+  // Ondertussen een ander bandje gescand (nieuwe klant) — dit late antwoord
+  // hoort niet meer op dit scherm te verschijnen.
+  if (huidigeBandje !== uidOpMoment) return;
+
+  if (!data.ok) {
+    tekenQRStatus('⚠️ ' + (data.fout || 'Kon geen betaallink aanmaken'));
+    return;
+  }
+
+  document.getElementById('qr-bedrag-tekst').textContent = `Te betalen: €${Number(data.bedrag).toFixed(2).replace('.', ',')}`;
+  if (data.checkoutUrl) {
+    tekenQR(data.checkoutUrl);
+  } else {
+    // Gesimuleerd: Mollie-betalingen staan uit in Beheer > Instellingen op
+    // de reserveringen-app (of er is nog geen sleutel ingesteld). Geen
+    // echte betaallink om te scannen — de polling hieronder rondt dit
+    // vanzelf, vrijwel meteen, als test af.
+    tekenQRStatus('🧪 Gesimuleerd (Mollie-betalingen staan uit) — wordt automatisch bevestigd');
+  }
+  document.getElementById('qr-wacht-tekst').style.display = '';
+
+  startQrPolling(uidOpMoment, data.betalingId, gast);
+}
+
+function startQrPolling(uidOpMoment, betalingId, gast) {
+  _huidigeQrBetalingId = betalingId;
+
+  async function poll() {
+    if (_huidigeQrBetalingId !== betalingId) return; // ondertussen gestopt of vervangen
+
+    let data;
+    try {
+      const res = await fetch(`${RESERVERINGEN_API_URL}/api/kassa/mollie-betaling/${encodeURIComponent(betalingId)}`, { cache: 'no-store' });
+      data = await res.json();
+    } catch {
+      _qrPollTimer = setTimeout(poll, 3000);
+      return;
+    }
+    if (_huidigeQrBetalingId !== betalingId) return; // opnieuw checken: kan tijdens de aanvraag zijn gestopt
+
+    if (data.status === 'verwerkt') {
+      stopQrPolling();
+      await qrBetalingBevestigd(uidOpMoment, gast, Number(data.bedrag));
+      return;
+    }
+    if (data.status === 'mislukt') {
+      stopQrPolling();
+      tekenQRStatus('⚠️ Betaling mislukt of geannuleerd — kies opnieuw een betaalwijze.');
+      return;
+    }
+    _qrPollTimer = setTimeout(poll, 2500);
+  }
+  poll();
+}
+
+// Wordt aangeroepen zodra de polling een bevestigde Mollie-betaling ziet.
+// De betaling zelf staat dan al in de kassa-database (weggeschreven door de
+// webhook op de reserveringen-app, vóórdat de status hier "verwerkt" toont)
+// — hier dus alleen de plaatselijke afhandeling (bon, toast), nooit nog een
+// keer DB.voegBetalingToe(): dat zou de omzet verdubbelen.
+async function qrBetalingBevestigd(uidOpMoment, gast, betaaldBedrag) {
+  if (huidigeBandje !== uidOpMoment) {
+    // Kassa is intussen alweer bij een andere gast — niet meer ingrijpen op
+    // het huidige scherm, de betaling zelf is hoe dan ook al goed verwerkt.
+    toonToast(`✓ ${gast.naam} — betaling ontvangen (op de achtergrond verwerkt)`);
+    return;
+  }
+  document.getElementById('verwerking-regel1').style.opacity = '0';
+  document.getElementById('verwerking-regel1').textContent = '';
+  document.getElementById('verwerking-regel2').style.opacity = '0';
+  document.getElementById('verwerking-regel2').textContent = '';
+  document.getElementById('verwerking-spinner').style.display = 'block';
+  document.getElementById('verwerking-overlay').style.display = 'flex';
+  toonScherm('tap');
+  await rondAfrekeningLokaalAf(gast, betaaldBedrag);
 }
 
 function bevestigBetaling() {
@@ -2991,22 +3104,31 @@ function _groepeerLogOpDatum(logRijen) {
 
 async function gastRekentAf(wijze = 'contant') {
   const gast = gasten[huidigeBandje];
-
-  // Gebruik module-variabele gevuld door openBetaalscherm()
   const openLog = _openBetaalLog.map(r => ({ tijd: new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}), omschrijving: r.omschrijving || '—', totaal: Number(r.totaal || 0) }));
   const betaaldBedrag = openLog.reduce((s,r) => s + r.totaal, 0) || Number(gast.openstaand) || 0;
 
   await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: betaaldBedrag, wijze });
+  await rondAfrekeningLokaalAf(gast, betaaldBedrag);
+}
+
+// Gedeeld staartstuk van een afrekening: statusregels, bon printen, bon
+// mailen. Twee aanroeppaden: gastRekentAf() hierboven (contant/staff-
+// bevestigd, schrijft de betaling zelf eerst weg) en qrBetalingBevestigd()
+// (de betaling is dán al server-side weggeschreven door de Mollie-webhook
+// — dit hier nogmaals doen zou de omzet verdubbelen, dus die roept alleen
+// dít staartstuk aan, niet DB.voegBetalingToe()).
+async function rondAfrekeningLokaalAf(gast, betaaldBedrag) {
+  const openLog = _openBetaalLog.map(r => ({ tijd: new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}), omschrijving: r.omschrijving || '—', totaal: Number(r.totaal || 0) }));
+
   _verwerkingRegel(1, `✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
   if (isOnline && openLog.length > 0) _verwerkingRegel(2, `📧 Bon wordt verzonden…`);
   gast.openstaand = 0;
   await DB.upsertLid(gast);
 
   // Papieren bon van de zojuist afgehandelde afrekening — ongeacht
-  // betaalwijze (contant bevestigd of pin/QR bevestigd via dezelfde
-  // "Betaling ontvangen"-knop), gegroepeerd per datum met de artikelen van
-  // die dag opgeteld. printAfrekening() doet zelf niets als er geen printer
-  // is ingesteld.
+  // betaalwijze, gegroepeerd per datum met de artikelen van die dag
+  // opgeteld. printAfrekening() doet zelf niets als er geen printer is
+  // ingesteld.
   if (_openBetaalLog.length > 0) {
     printAfrekening({
       naam: gast.naam, plek: gast.plek, type: gast.type,
