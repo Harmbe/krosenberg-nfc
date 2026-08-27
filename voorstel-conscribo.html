@@ -1,0 +1,629 @@
+<title>Van bon naar grootboek</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+  :root {
+    --ground:      #fffdf7;
+    --surface:     #f6f2e9;
+    --surface-2:   #efe9db;
+    --ink:         #1a2e0f;
+    --ink-soft:    #55654a;
+    --ink-faint:   #7d8a72;
+    --line:        #ddd4c0;
+    --line-soft:   #eae3d2;
+    --accent:      #2d4a1e;
+    --accent-lift: #4a7c2f;
+    --flag:        #9c3a24;
+    --flag-bg:     #f8ece7;
+    --warn:        #7a5410;
+    --warn-bg:     #f7f0dd;
+    --debet:       #2d4a1e;
+    --credit:      #6b4f8a;
+
+    --measure: 40rem;
+    --wide: 52rem;
+
+    --step--1: 0.83rem;
+    --step-0:  1.0rem;
+    --step-1:  1.22rem;
+    --step-2:  1.55rem;
+    --step-3:  2.1rem;
+    --step-4:  2.9rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #11170e;
+      --surface:     #192015;
+      --surface-2:   #212a1c;
+      --ink:         #e9e7dc;
+      --ink-soft:    #a9b39d;
+      --ink-faint:   #7f8a74;
+      --line:        #2e3928;
+      --line-soft:   #242e1f;
+      --accent:      #96c46f;
+      --accent-lift: #b0da8b;
+      --flag:        #e59480;
+      --flag-bg:     #2a1a15;
+      --warn:        #ddad57;
+      --warn-bg:     #262013;
+      --debet:       #96c46f;
+      --credit:      #b79ad4;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #11170e;
+    --surface:     #192015;
+    --surface-2:   #212a1c;
+    --ink:         #e9e7dc;
+    --ink-soft:    #a9b39d;
+    --ink-faint:   #7f8a74;
+    --line:        #2e3928;
+    --line-soft:   #242e1f;
+    --accent:      #96c46f;
+    --accent-lift: #b0da8b;
+    --flag:        #e59480;
+    --flag-bg:     #2a1a15;
+    --warn:        #ddad57;
+    --warn-bg:     #262013;
+    --debet:       #96c46f;
+    --credit:      #b79ad4;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--step-0);
+    line-height: 1.65;
+    margin: 0;
+    padding: 0 1.25rem 6rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: var(--wide);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2.75rem;
+  }
+
+  .measure { max-width: var(--measure); }
+
+  h1, h2, h3 {
+    font-family: Bitter, ui-serif, Georgia, serif;
+    line-height: 1.2;
+    text-wrap: balance;
+    margin: 0;
+    color: var(--ink);
+  }
+  h1 { font-size: var(--step-4); font-weight: 700; letter-spacing: -0.02em; }
+  h2 { font-size: var(--step-2); font-weight: 700; }
+  h3 { font-size: var(--step-1); font-weight: 600; }
+
+  p, ul, ol { margin: 0; }
+  ul, ol { padding-left: 1.15rem; display: flex; flex-direction: column; gap: 0.45rem; }
+  li::marker { color: var(--ink-faint); }
+
+  a { color: var(--accent-lift); text-underline-offset: 2px; }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent-lift);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  code, .num {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  code {
+    font-size: 0.88em;
+    background: var(--surface-2);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+
+  /* ── Kop ─────────────────────────────────────────────────────────── */
+  header {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    padding: 3.5rem 0 0;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--step--1);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-faint);
+  }
+  .lede {
+    font-size: var(--step-1);
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+  .rule { height: 1px; background: var(--line); border: 0; margin: 0; }
+
+  /* ── Secties ─────────────────────────────────────────────────────── */
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+  }
+  section > h2 { margin-bottom: -0.2rem; }
+
+  /* ── Drie-rollen kaarten ─────────────────────────────────────────── */
+  .rollen {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .rol {
+    background: var(--surface);
+    padding: 1.1rem 1.2rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .rol .naam {
+    font-family: Bitter, serif;
+    font-weight: 600;
+    font-size: var(--step-1);
+  }
+  .rol .rol-doet {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--step--1);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent-lift);
+  }
+  .rol p { font-size: 0.94rem; color: var(--ink-soft); }
+
+  /* ── Grootboektabellen ───────────────────────────────────────────── */
+  .tabelblok {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .tabelblok > .kop {
+    padding: 0.7rem 1rem;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--step--1);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-soft);
+  }
+  .scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.94rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  th {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 500;
+    font-size: var(--step--1);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  td.rk { white-space: nowrap; }
+  .rk code { background: none; padding: 0; color: var(--accent-lift); font-weight: 500; }
+  td.bedrag { text-align: right; white-space: nowrap; }
+
+  /* ── T-rekening ──────────────────────────────────────────────────── */
+  .journaal {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .journaal .kop {
+    padding: 0.7rem 1rem;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--step--1);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .journaal .regels { display: flex; flex-direction: column; }
+  .jr {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr auto;
+    gap: 0.75rem;
+    align-items: baseline;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 0.94rem;
+  }
+  .jr:last-child { border-bottom: 0; }
+  .jr .zijde {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--step--1);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .jr.d .zijde { color: var(--debet); }
+  .jr.c .zijde { color: var(--credit); }
+  .jr.c .rekening { padding-left: 1.25rem; }
+  .jr .bedrag { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+
+  /* ── Callouts ────────────────────────────────────────────────────── */
+  .callout {
+    border-left: 3px solid var(--line);
+    background: var(--surface);
+    padding: 1rem 1.15rem;
+    border-radius: 0 4px 4px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .callout .label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--step--1);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-faint);
+  }
+  .callout.gat { border-left-color: var(--flag); background: var(--flag-bg); }
+  .callout.gat .label { color: var(--flag); }
+  .callout.keuze { border-left-color: var(--warn); background: var(--warn-bg); }
+  .callout.keuze .label { color: var(--warn); }
+  .callout p { font-size: 0.96rem; }
+
+  /* ── Fasering ────────────────────────────────────────────────────── */
+  .fasen { display: flex; flex-direction: column; gap: 1px; background: var(--line);
+           border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .fase {
+    background: var(--surface);
+    padding: 1rem 1.2rem;
+    display: grid;
+    grid-template-columns: 2.25rem 1fr;
+    gap: 0.25rem 1rem;
+    align-items: baseline;
+  }
+  .fase .nr {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--step--1);
+    color: var(--accent-lift);
+    font-weight: 500;
+  }
+  .fase .titel { font-family: Bitter, serif; font-weight: 600; font-size: var(--step-1); }
+  .fase p { grid-column: 2; font-size: 0.94rem; color: var(--ink-soft); }
+
+  /* ── Schermschets ────────────────────────────────────────────────── */
+  .scherm {
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--ground);
+  }
+  .scherm .balk {
+    background: var(--accent);
+    color: var(--ground);
+    padding: 0.6rem 1rem;
+    font-family: Bitter, serif;
+    font-weight: 600;
+    font-size: 0.96rem;
+  }
+  :root[data-theme="dark"] .scherm .balk,
+  .scherm .balk { color: #fffdf7; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .scherm .balk { color: #11170e; }
+  }
+  :root[data-theme="dark"] .scherm .balk { color: #11170e; }
+  .scherm .rij {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 0.94rem;
+  }
+  .scherm .rij:last-child { border-bottom: 0; }
+  .scherm .rij .bedrag {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .pil {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .pil.klaar { color: var(--accent-lift); }
+  .pil.wacht { color: var(--warn); }
+  .knop {
+    font-family: "Source Sans 3", sans-serif;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--accent-lift);
+    color: var(--accent-lift);
+    background: none;
+    white-space: nowrap;
+  }
+  .knop[disabled] { opacity: 0.4; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 1.25rem;
+    color: var(--ink-faint);
+    font-size: 0.9rem;
+    max-width: var(--measure);
+  }
+
+  @media (max-width: 34rem) {
+    :root { --step-4: 2.1rem; --step-3: 1.7rem; --step-2: 1.35rem; }
+    .jr { grid-template-columns: 4.5rem 1fr; }
+    .jr .bedrag { grid-column: 2; }
+  }
+</style>
+
+<div class="page">
+
+  <header>
+    <div class="eyebrow">Voorstel · Kampeervereniging Krösenberg</div>
+    <h1>Van bon naar grootboek</h1>
+    <p class="lede">Hoe de omzet uit de kassa-app en de reserveringen-app in Conscribo terechtkomt, zonder dat de penningmeester een bedrag overtypt.</p>
+  </header>
+
+  <hr class="rule">
+
+  <section>
+    <h2>Wat dit oplost</h2>
+    <div class="measure" style="display:flex;flex-direction:column;gap:1rem">
+      <p>Vandaag ontstaan de inkomsten op twee plekken — achter de bar en op het reserveringsscherm — en belanden ze via een omweg van lijstjes en optelsommen in Conscribo. Elke overzetting is werk, en elk werk is een kans op een typefout.</p>
+      <p>Het voorstel: beide apps leveren hun omzet als <strong>kant-en-klare dagstaat</strong> aan. De penningmeester ziet die in één scherm, controleert, en drukt op boeken. Wil hij het later helemaal automatisch, dan is dat één instelling — maar we beginnen bewust met de hand aan het stuur.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Drie systemen, drie rollen</h2>
+    <p class="measure">De verkenning van de Conscribo-administratie leverde één inzicht op dat alles eenvoudiger maakt: Conscribo is bij jullie <em>geen</em> ledenadministratie. De relatiekant is kaal — 53 relaties, geen lidmaatschapsvelden, geen groepen — terwijl het grootboek juist uitgebreid en precies is. Conscribo doet geld. Daarmee valt het lastigste deel van een koppeling gewoon weg.</p>
+
+    <div class="rollen">
+      <div class="rol">
+        <div class="rol-doet">Wie is lid</div>
+        <div class="naam">Reserveringen-app</div>
+        <p>Een eenmalig ingevoerde ledenlijst — naam en e-mailadres — gekoppeld aan een pleknummer. Wie daarin voorkomt, is lid; wie niet, is gast. Dit wordt de enige plek waar dat onderscheid vandaan komt.</p>
+      </div>
+      <div class="rol">
+        <div class="rol-doet">Wie mag kamperen</div>
+        <div class="naam">NFN</div>
+        <p>Elke bezoeker — lid én gast — moet NFN-lid zijn om te mogen kamperen. Dat nummer zegt dus niets over Krösenberg-lidmaatschap en speelt in deze koppeling geen rol.</p>
+      </div>
+      <div class="rol">
+        <div class="rol-doet">Wat kost het</div>
+        <div class="naam">Conscribo</div>
+        <p>Ontvangt uitsluitend geld: dagstaten op de bestaande grootboekrekeningen. Geen namen, geen ledenbestand.</p>
+      </div>
+    </div>
+
+    <p class="measure">De kassa-app hangt onder de reserveringen-app: die weet al welke plek bij welk bandje hoort, en haalt de naam daar op. Diezelfde koppeling — plek aan lid — bepaalt straks ook op welke grootboekrekening een overnachting terechtkomt.</p>
+
+    <div class="callout gat">
+      <div class="label">Hier moet de app worden uitgebreid</div>
+      <p>Die ledenlijst en de koppeling aan een pleknummer bestaan nog niet: de reserveringen-app kent nu alleen een <code>gast</code>-record per boeking, met een los, optioneel veld <code>nfn_lidnummer</code> — geen betrouwbare vlag, en (zoals hierboven) sowieso niet het juiste onderscheid. Nodig is een nieuwe, blijvende ledentabel (naam, e-mail) met een koppeling naar <code>plek</code>, eenmalig gevuld en daarna alleen bijgewerkt bij mutaties.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Eén koppeling, niet twee</h2>
+    <p class="measure">Beide apps draaien al op dezelfde Supabase-database. De koppeling hoort daar dus ook, en niet twee keer los in elke app. Dat scheelt niet alleen werk: de Conscribo-inloggegevens staan dan op één plek, serverzijdig, en nooit in een browser op een tablet achter de bar.</p>
+
+    <div class="tabelblok">
+      <div class="kop">Wat waar komt te staan</div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Onderdeel</th><th>Waar</th><th>Waarom daar</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Dagstaat samenstellen</td>
+              <td>Supabase</td>
+              <td>Beide apps schrijven hun omzet daar al naartoe.</td>
+            </tr>
+            <tr>
+              <td>Boeken naar Conscribo</td>
+              <td>Supabase edge function</td>
+              <td>De inloggegevens blijven serverzijdig; de kassa-tablet raakt Conscribo nooit aan.</td>
+            </tr>
+            <tr>
+              <td>Controleren en akkoord geven</td>
+              <td>Beheer van de reserveringen-app</td>
+              <td>Daar logt de penningmeester al in, op een computer. De kassa is een kiosk achter de bar.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p class="measure">De kassa blijft dus offline gewoon werken. Of Conscribo bereikbaar is, maakt tijdens het tappen niets uit — er wordt pas geboekt als iemand daar op een rustig moment akkoord voor geeft.</p>
+  </section>
+
+  <section>
+    <h2>Het boekingsmodel: de dagstaat</h2>
+    <p class="measure">Een drukke zaterdag levert honderden losse consumpties op. Die stuk voor stuk naar het grootboek sturen zou de boekhouding onleesbaar maken. In plaats daarvan boeken we per dag één samengevatte transactie per bron — precies zoals een kantine dat met de hand ook zou doen.</p>
+
+    <h3>Kantine</h3>
+    <p class="measure">De kassa houdt openstaande bedragen per persoon bij. Geld beweegt pas bij het afrekenen, en dát is het moment waarop we boeken:</p>
+
+    <div class="journaal">
+      <div class="kop">Dagstaat kantine · 27-08-2026 · ref <span class="num">KASSA-2026-08-27</span></div>
+      <div class="regels">
+        <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10030</span> Kas kantine</span><span class="bedrag">184,50</span></div>
+        <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10010</span> Bankrekening <span style="color:var(--ink-faint)">(pin)</span></span><span class="bedrag">312,75</span></div>
+        <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">83010</span> Kantine opbrengsten</span><span class="bedrag">497,25</span></div>
+      </div>
+    </div>
+
+    <p class="measure">Culicom loopt langs dezelfde weg naar <code>83020</code>. De splitsing contant/pin heeft de kassa al, want die bepaalt ook of de kassalade opengaat.</p>
+
+    <div class="callout keuze">
+      <div class="label">Bewuste keuze</div>
+      <p>De omzet valt op de dag van betálen, niet op de dag van consumeren. Wie de hele week aftapt en zondag afrekent, telt dus mee op zondag. Dat is voor een kantine heel normaal en scheelt een debiteurenadministratie per gast. De keerzijde: wat op 31 december nog openstaat, is dat jaar nog niet geboekt. De kassa kan daarvoor per jaareinde één totaalbedrag opleveren, zodat u dat met één memoriaalboeking rechttrekt.</p>
+    </div>
+
+    <h3>Reserveringen</h3>
+    <p class="measure">Hier is het grootboek al verrassend goed voorbereid: er bestaan losse rekeningen per tariefsoort, met de prijs in de naam, en apart voor leden en gasten. Dat is precies de structuur die de reserveringen-app moet vullen.</p>
+
+    <div class="tabelblok">
+      <div class="kop">Tariefsoort → grootboekrekening</div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Wat</th><th>Gast</th><th>Lid</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Kampeerplek mét elektra</td><td class="rk"><code>82011</code> GKE</td><td class="rk"><code>82021</code> LKE</td></tr>
+            <tr><td>Kampeerplek zonder elektra</td><td class="rk"><code>82012</code> GK</td><td class="rk"><code>82022</code> LK</td></tr>
+            <tr><td>Overnachting volwassene</td><td class="rk"><code>82013</code> GV</td><td class="rk"><code>82023</code> LV</td></tr>
+            <tr><td>Overnachting tiener</td><td class="rk"><code>82014</code> GT</td><td class="rk"><code>82024</code> LT</td></tr>
+            <tr><td>Hond</td><td class="rk"><code>82015</code> GH</td><td class="rk"><code>82025</code> LH</td></tr>
+            <tr><td>Logee of dagbezoek</td><td class="rk"><code>82016</code> GLD</td><td class="rk"><code>82026</code> LLD</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p class="measure">Of het de linker- of de rechterkolom wordt, hangt af van of de plek van de boeking gekoppeld is aan iemand uit de ledenlijst hierboven. Mét elektra of zonder volgt uit de plek zelf — de app weet dat al.</p>
+
+    <div class="callout gat">
+      <div class="label">Hier moet de app ook worden uitgebreid</div>
+      <p>De reserveringen-app rekent nu met één getal <code>aantal_personen</code> en één <code>bedrag_totaal</code>. Om op bovenstaande rekeningen te kunnen boeken, moet een boeking gaan bijhouden hóéveel volwassenen, tieners, honden en logees erbij horen. Zonder die uitsplitsing kan de omzet alleen op één verzamelrekening landen, en verliest u het inzicht dat het huidige rekeningschema juist biedt.</p>
+    </div>
+
+    <div class="callout">
+      <div class="label">Vervalt</div>
+      <p>Het oorspronkelijke ontwerp van de reserveringen-app bevat velden voor toeristenbelasting (<code>toeristenbelasting_totaal</code> per boeking en een tarief per seizoen). Als vereniging draagt Krösenberg die niet af, dus die velden blijven leeg en er hoeft in het grootboek niets voor te komen. Bij het uitbreiden van het datamodel kunnen ze meteen verdwijnen.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wat de penningmeester ziet</h2>
+    <p class="measure">Eén scherm in het beheer, met de klaarstaande dagstaten. Niets gaat het grootboek in zonder dat hier iemand op heeft geklikt.</p>
+
+    <div class="scherm">
+      <div class="balk">Beheer · Boeken naar Conscribo</div>
+      <div class="rij"><span>Kantine — zaterdag 23 augustus</span><span class="bedrag">€ 497,25</span><span class="pil klaar">geboekt</span></div>
+      <div class="rij"><span>Kantine — zondag 24 augustus</span><span class="bedrag">€ 213,80</span><button class="knop">Boeken</button></div>
+      <div class="rij"><span>Reserveringen — week 34</span><span class="bedrag">€ 1.284,00</span><button class="knop">Boeken</button></div>
+      <div class="rij"><span>Kantine — maandag 25 augustus</span><span class="bedrag">€ 46,10</span><span class="pil wacht">dag loopt nog</span></div>
+    </div>
+
+    <p class="measure">Doorklikken op een regel toont de onderliggende bonnen en de journaalpost die eruit volgt, zodat controleren geen kwestie van vertrouwen is. Een geboekte regel toont het transactienummer uit Conscribo en is niet nog eens te boeken.</p>
+  </section>
+
+  <section>
+    <h2>Waarom dit niet dubbel kan boeken</h2>
+    <p class="measure">Dat is het echte risico van zo'n koppeling: één keer te vaak op boeken drukken, of een edge function die het na een storing nog eens probeert. Dubbele omzet in het grootboek is vervelend werk om terug te draaien. Er zitten daarom drie sloten op.</p>
+
+    <div class="tabelblok">
+      <div class="kop">Drie sloten</div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Slot</th><th>Werking</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Vaste referentie</td>
+              <td>Elke dagstaat krijgt een voorspelbaar kenmerk, zoals <code>KASSA-2026-08-27</code>. Dezelfde dag levert altijd hetzelfde kenmerk op.</td>
+            </tr>
+            <tr>
+              <td>Vooraf navragen</td>
+              <td>Vlak voor het boeken vraagt de koppeling aan Conscribo of dat kenmerk daar al voorkomt. Zo ja: niet boeken.</td>
+            </tr>
+            <tr>
+              <td>Vastleggen achteraf</td>
+              <td>Het transactienummer dat Conscribo teruggeeft, wordt bij de dagstaat bewaard. Een dagstaat met nummer is definitief afgehandeld.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p class="measure">Het middelste slot is het belangrijkste: dat werkt ook als onze eigen database iets niet heeft meegekregen, omdat het de vraag stelt aan de administratie zelf.</p>
+  </section>
+
+  <section>
+    <h2>Uitrol in vier stappen</h2>
+    <p class="measure">In het grootboek staat al een complete parallelle set rekeningen met <code>TEST:</code> ervoor — <code>83015</code> naast <code>83010</code>, <code>10035</code> naast <code>10030</code>, en zo verder. Iemand heeft dit dus al eens voorbereid. Dat is een cadeautje: we kunnen daarop proefdraaien zonder de echte cijfers te raken.</p>
+
+    <div class="fasen">
+      <div class="fase">
+        <span class="nr">01</span>
+        <span class="titel">Proefdraaien op de TEST-rekeningen</span>
+        <p>De kantine-dagstaat een paar weken naar de TEST-rekeningen boeken en naast de handmatige boeking leggen. Wijkt er iets af, dan kost dat niets. Dit is ook het moment om te horen van wie die rekeningen zijn en of er al een plan achter zat.</p>
+      </div>
+      <div class="fase">
+        <span class="nr">02</span>
+        <span class="titel">Kantine live</span>
+        <p>De eenvoudigste stroom: één opbrengstrekening, twee betaalwijzen. Zodra de proef klopt, gaat de dagstaat naar <code>83010</code> en <code>83020</code>.</p>
+      </div>
+      <div class="fase">
+        <span class="nr">03</span>
+        <span class="titel">Ledenlijst en plekkoppeling</span>
+        <p>De ledentabel (naam, e-mail) en de koppeling aan een pleknummer bouwen, en eenmalig vullen. Dit is de voorwaarde voor alles wat hierna komt — zonder deze stap kan geen enkele boeking als lid of gast worden herkend.</p>
+      </div>
+      <div class="fase">
+        <span class="nr">04</span>
+        <span class="titel">Reserveringen voorbereiden</span>
+        <p>De uitsplitsing naar volwassenen, tieners, honden en logees in de app. Pas daarna boeken. Deze stap is groter dan de eerste twee samen.</p>
+      </div>
+      <div class="fase">
+        <span class="nr">05</span>
+        <span class="titel">Desgewenst automatisch</span>
+        <p>Loopt het een seizoen goed, dan kan de dagstaat van gisteren 's nachts vanzelf worden geboekt. Het beheerscherm blijft bestaan als controle achteraf. Dit is een keuze, geen eindstation.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wat we van u nodig hebben</h2>
+    <ul class="measure">
+      <li><strong>Een aparte API-gebruiker in Conscribo</strong>, met schrijfrechten op de financiële administratie. Niet een persoonlijk account: die rechten moeten los in te trekken zijn.</li>
+      <li><strong>Duidelijkheid over de TEST-rekeningen</strong>: lopend werk of restant van een eerdere poging?</li>
+      <li><strong>Een voorkeur voor het ritme</strong>: per dag boeken, of per week samengevat? Per dag geeft het fijnste beeld, per week het kortste lijstje.</li>
+    </ul>
+
+    <div class="callout keuze">
+      <div class="label">Aanbeveling</div>
+      <p>Begin bij stap 1 en beslis pas over volledige automatisering als u een seizoen hebt gezien dat de bedragen kloppen. De winst zit niet in het wegautomatiseren van de laatste klik, maar in het verdwijnen van het overtypen.</p>
+    </div>
+  </section>
+
+  <footer>
+    Opgesteld op basis van een read-only verkenning van de Conscribo-administratie (augustus 2026), het datamodel van de reserveringen-app en de kassa-app. Er is bij die verkenning niets in de administratie gewijzigd.
+  </footer>
+
+</div>
