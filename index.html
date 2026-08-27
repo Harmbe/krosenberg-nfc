@@ -2565,6 +2565,33 @@ async function registreerWinkelwagenItems(gast) {
   gast.openstaand = Math.round(alleLog.filter(r => r.lid_uid === gast.uid && (!laatste || r.geregistreerd_op > laatste)).reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
   await DB.upsertLid(gast);
 
+  // Automatisch bon printen — welke categorieën dat triggeren en welke
+  // velden dan getoond worden, staat per categorie ingesteld bij Artikelen.
+  // Deze bon is een betaalbewijs voor bv. de keuken: alleen de artikelen uit
+  // een categorie mét "automatisch printen" horen erop, niet de complete
+  // bestelling — een consumptie uit een andere categorie in dezelfde
+  // bestelling (bv. een drankje naast een keukenbestelling) hoort daar niet
+  // tussen te staan. Hier (i.p.v. alleen in bevestigBestelling()) zodat dit
+  // ook gebeurt als er via openBetaalscherm() rechtstreeks wordt afgerekend
+  // zonder aparte "Registreer"-stap.
+  if (getAutoPrint()) {
+    const printCategorieen = new Set(
+      Object.entries(categorieInstellingen).filter(([, inst]) => inst?.print_actief).map(([cat]) => cat)
+    );
+    const printItems = items.filter(([naam]) => printCategorieen.has(producten.find(x => x.naam === naam)?.categorie));
+    if (printItems.length) {
+      const triggers = [...new Set(printItems.map(([naam]) => producten.find(x => x.naam === naam)?.categorie))]
+        .map(cat => categorieInstellingen[cat]);
+      const toon = veld => triggers.some(inst => inst[veld]);
+      const printTotaal = printItems.reduce((s, [, v]) => s + v.prijs * v.aantal, 0);
+      printBon({
+        naam: gast.naam, plek: gast.plek, type: gast.type, items: printItems, totaal: printTotaal,
+        toonNaam: toon('toon_naam'), toonPlek: toon('toon_plek'),
+        toonTijd: toon('toon_tijd'), toonPrijs: toon('toon_prijs'),
+      });
+    }
+  }
+
   winkelwagen = {};
   return { items, totaal };
 }
@@ -2573,7 +2600,6 @@ async function bevestigBestelling() {
   const gast = gasten[huidigeBandje];
   const resultaat = await registreerWinkelwagenItems(gast);
   if (!resultaat) return;
-  const { items, totaal } = resultaat;
 
   // Geen apart bevestigingsscherm meer — dat herhaalde alleen wat de gast al
   // in het winkelmandje zag (regels + totaal), en kostte de volgende gast
@@ -2582,24 +2608,6 @@ async function bevestigBestelling() {
   geluidBevestigd();
   toonToast(`✓ Geregistreerd — nieuw openstaand: €${gast.openstaand.toFixed(2).replace('.', ',')}`);
   toonScherm('tap');
-
-  // Automatisch bon printen — welke categorieën dat triggeren en welke
-  // velden dan getoond worden, staat per categorie ingesteld bij Artikelen.
-  // Zit een bestelling in meerdere zulke categorieën tegelijk, dan tonen we
-  // een veld zodra minstens één daarvan het wil (liever te veel dan te
-  // weinig op de bon).
-  if (getAutoPrint()) {
-    const categorieenInMandje = [...new Set(items.map(([naam]) => producten.find(x => x.naam === naam)?.categorie).filter(Boolean))];
-    const triggers = categorieenInMandje.map(cat => categorieInstellingen[cat]).filter(inst => inst?.print_actief);
-    if (triggers.length) {
-      const toon = veld => triggers.some(inst => inst[veld]);
-      printBon({
-        naam: gast.naam, plek: gast.plek, type: gast.type, items, totaal,
-        toonNaam: toon('toon_naam'), toonPlek: toon('toon_plek'),
-        toonTijd: toon('toon_tijd'), toonPrijs: toon('toon_prijs'),
-      });
-    }
-  }
 }
 
 // ── Printer ──────────────────────────────────────────────────────────────────
