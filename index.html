@@ -2364,9 +2364,17 @@ async function haalGastNaamOp(plek_code, lid_uid) {
 // Backward-compat alias (demo-knoppen en intern gebruik)
 function simuleerScan(uid) { scanBandje(uid); }
 
+// Som van het nog niet-geregistreerde winkelmandje — meegeteld in het
+// getoonde "Openstaand" en in de Afrekenen-knop, zodat iemand die net
+// producten heeft geselecteerd meteen ziet wat er (inclusief het mandje)
+// betaald zou moeten worden, zonder eerst apart te hoeven "Registreren".
+function winkelwagenTotaal() {
+  return Object.values(winkelwagen).reduce((s, v) => s + v.prijs * v.aantal, 0);
+}
+
 function updateOpenstaand() {
   const gast = gasten[huidigeBandje];
-  document.getElementById('gast-openstaand').textContent = '€' + gast.openstaand.toFixed(2).replace('.', ',');
+  document.getElementById('gast-openstaand').textContent = '€' + (Number(gast.openstaand) + winkelwagenTotaal()).toFixed(2).replace('.', ',');
 }
 
 // type 'gast' (verhuurplekken) heeft geen persoonlijke pincode-flow, en
@@ -2500,6 +2508,8 @@ function voegToe(naam, prijs) {
   geluidArtikel();
   renderWinkelwagen();
   renderProducten();
+  updateOpenstaand();
+  updateAfrekenenBlok();
   const btn = document.querySelector(`.product-btn[data-productnaam="${naam}"]`);
   if (btn) { btn.classList.add('flash'); btn.addEventListener('animationend', () => btn.classList.remove('flash'), { once: true }); }
 }
@@ -2522,11 +2532,17 @@ function renderWinkelwagen() {
   document.getElementById('bevestig-prijs').textContent = items.length > 0 ? `€${totaal.toFixed(2).replace('.', ',')}` : '';
 }
 
-async function bevestigBestelling() {
-  const gast = gasten[huidigeBandje];
+// Schrijft de huidige inhoud van het winkelmandje weg (consumptie-log,
+// voorraad, openstaand) — het deel van bevestigBestelling() dat ook
+// openBetaalscherm() nodig heeft wanneer iemand rechtstreeks op "Afrekenen"
+// drukt zonder eerst apart te "Registreren". Geeft de weggeschreven items +
+// totaal terug (of null als het mandje leeg was), zodat de aanroeper zelf
+// bepaalt wat daarna gebeurt (toast/printen bij Registreer, niets bij
+// Afrekenen — dat krijgt zijn eigen afrekenbon).
+async function registreerWinkelwagenItems(gast) {
   const items = Object.entries(winkelwagen).filter(([,v]) => v.aantal > 0);
+  if (items.length === 0) return null;
   const totaal = items.reduce((s,[,v]) => s + v.prijs * v.aantal, 0);
-  if (items.length === 0) return;
 
   // Schrijf log EERST — daarna openstaand berekenen
   const omschrijving = items.map(([naam, v]) => `${v.aantal}× ${naam}`).join(', ');
@@ -2548,6 +2564,16 @@ async function bevestigBestelling() {
   const laatste = betalingenLid[betalingenLid.length - 1] || null;
   gast.openstaand = Math.round(alleLog.filter(r => r.lid_uid === gast.uid && (!laatste || r.geregistreerd_op > laatste)).reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
   await DB.upsertLid(gast);
+
+  winkelwagen = {};
+  return { items, totaal };
+}
+
+async function bevestigBestelling() {
+  const gast = gasten[huidigeBandje];
+  const resultaat = await registreerWinkelwagenItems(gast);
+  if (!resultaat) return;
+  const { items, totaal } = resultaat;
 
   // Geen apart bevestigingsscherm meer — dat herhaalde alleen wat de gast al
   // in het winkelmandje zag (regels + totaal), en kostte de volgende gast
@@ -2797,10 +2823,14 @@ async function renderBeheer() {
 function updateAfrekenenBlokVoor(uid) {
   const gast = gasten[uid];
   if (!gast) return;
+  // Het mandje hoort alleen bij de nu gescande gast — voor een andere uid
+  // (zou hier niet moeten voorkomen, maar geen aanname waard) telt het niet mee.
+  const mandje = uid === huidigeBandje ? winkelwagenTotaal() : 0;
+  const bedrag = Number(gast.openstaand) + mandje;
   const btn = document.getElementById('afrekenen-product-btn');
-  if (btn) { btn.style.display = gast.openstaand > 0 ? '' : 'none'; }
+  if (btn) { btn.style.display = bedrag > 0 ? '' : 'none'; }
   const el = document.getElementById('afrekenen-product-bedrag');
-  if (el) el.textContent = '€' + Number(gast.openstaand).toFixed(2).replace('.', ',');
+  if (el) el.textContent = '€' + bedrag.toFixed(2).replace('.', ',');
 }
 
 function updateAfrekenenBlok() {
@@ -2810,6 +2840,14 @@ function updateAfrekenenBlok() {
 async function openBetaalscherm() {
   stopQrPolling(); // vangnet: nooit een poll van een vorige gast laten doorlopen
   const gast = gasten[huidigeBandje];
+
+  // Staan er nog niet-geregistreerde producten in het mandje (rechtstreeks op
+  // "Afrekenen" gedrukt zonder eerst apart op "Registreer" te drukken), schrijf
+  // die dan nu eerst weg — anders zou het hieronder berekende bedrag ze missen
+  // en zou de gast voor die producten helemaal niet afrekenen.
+  await registreerWinkelwagenItems(gast);
+  updateOpenstaand(); updateAfrekenenBlok(); renderWinkelwagen(); renderProducten();
+
   document.getElementById('betaal-naam').textContent = gast.naam + ' · Plek ' + gast.plek;
   // Bedrag wordt na het laden van openLog opnieuw gezet vanuit het log
   document.getElementById('contant-blok').classList.remove('zichtbaar');
