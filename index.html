@@ -892,12 +892,6 @@
   .beheer-menu .menu-slot { font-size: 0.7rem; color: var(--kr-muted); padding: 4px 16px 6px; text-transform: uppercase; letter-spacing: 0.05em; background: var(--kr-cream); }
   .beheer-menu .menu-lock::before { content: '🔒 '; font-size: 0.7rem; }
   body.ingelogd .beheer-menu .menu-lock::before { content: ''; }
-
-  /* Kassalade-knop op het bestelscherm: alleen zichtbaar en actief voor een
-     ingelogde beheerder van het kassasysteem (pincode-login), niet voor
-     gasten die met hun bandje bestellen. */
-  #kassalade-open-knop { display: none; }
-  body.ingelogd #kassalade-open-knop { display: inline-block; }
 </style>
 </head>
 <body>
@@ -1196,7 +1190,7 @@
         <div style="font-size:0.85rem;opacity:0.7" id="gast-plek">—</div>
       </div>
       <button id="mijn-pincode-knop" onclick="openStelPinModal(false)" style="border:1.5px solid rgba(255,255,255,0.4);background:rgba(255,255,255,0.15);color:white;border-radius:8px;cursor:pointer;font-size:0.8rem;padding:5px 10px;white-space:nowrap">🔑 Mijn pincode</button>
-      <button id="kassalade-open-knop" onclick="kassaladeHandmatigOpenen()" style="border:1.5px solid rgba(255,255,255,0.4);background:rgba(255,255,255,0.15);color:white;border-radius:8px;cursor:pointer;font-size:0.8rem;padding:5px 10px;white-space:nowrap">🗄️ Kassa openen</button>
+      <button id="kassalade-open-knop" onclick="kassaladeHandmatigOpenen()" style="display:none;border:1.5px solid rgba(255,255,255,0.4);background:rgba(255,255,255,0.15);color:white;border-radius:8px;cursor:pointer;font-size:0.8rem;padding:5px 10px;white-space:nowrap">🗄️ Kassa openen</button>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
       <div>
@@ -2284,7 +2278,7 @@ async function scanBandje(bandje_uid) {
       const gast = gasten[lid_uid];
       document.getElementById('gast-naam').textContent = gast.naam;
       document.getElementById('gast-plek').textContent = 'Plek ' + plek_code;
-      updateOpenstaand(); updateMijnPincodeKnop(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
+      updateOpenstaand(); updateMijnPincodeKnop(); updateKassaladeKnop(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
       geluidScan();
       toonScherm('producten');
       haalGastNaamOp(plek_code, lid_uid);
@@ -2299,7 +2293,7 @@ async function scanBandje(bandje_uid) {
       winkelwagen = {};
       document.getElementById('gast-naam').textContent = gast.naam;
       document.getElementById('gast-plek').textContent = 'Plek ' + gast.plek;
-      updateOpenstaand(); updateMijnPincodeKnop(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
+      updateOpenstaand(); updateMijnPincodeKnop(); updateKassaladeKnop(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
       geluidScan();
       toonScherm('producten');
       // Verplicht: elk lid krijgt een bandje, dus dit is het moment waarop
@@ -2320,7 +2314,7 @@ async function scanBandje(bandje_uid) {
   winkelwagen = {};
   document.getElementById('gast-naam').textContent = gast.naam;
   document.getElementById('gast-plek').textContent = 'Plek ' + gast.plek;
-  updateOpenstaand(); updateMijnPincodeKnop(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
+  updateOpenstaand(); updateMijnPincodeKnop(); updateKassaladeKnop(); renderProducten(); renderWinkelwagen(); updateAfrekenenBlok();
   geluidScan();
   toonScherm('producten');
   // Verplicht, zie toelichting hierboven bij de lid-koppeling-tak.
@@ -2362,6 +2356,20 @@ function updateMijnPincodeKnop() {
   const btn = document.getElementById('mijn-pincode-knop');
   const gast = gasten[huidigeBandje];
   if (btn) btn.style.display = (gast && gast.type !== 'lid') ? 'none' : '';
+}
+
+// De kassalade-knop is er voor twee soorten beheerder: wie met een bandje van
+// een lid/intern-record met beheerder=true scant, en wie via de pincode in het
+// beheermenu is ingelogd. Type 'gast' kan hier nooit onder vallen — dat record
+// krijgt beheerder=true nooit toegekend (zie updateBeheerderVeld()).
+function magKassaladeOpenen() {
+  const gast = gasten[huidigeBandje];
+  return ingelogd || !!(gast && gast.beheerder);
+}
+
+function updateKassaladeKnop() {
+  const btn = document.getElementById('kassalade-open-knop');
+  if (btn) btn.style.display = magKassaladeOpenen() ? '' : 'none';
 }
 
 function productKnopHTML(p) {
@@ -2634,11 +2642,11 @@ async function openKassalade() {
   } catch { toonToast('⚠️ Printer niet bereikbaar — kassalade niet geopend'); }
 }
 
-// Knop op het bestelscherm waarmee een ingelogde beheerder de kassalade
-// handmatig kan openen (bv. om wisselgeld te pakken). Extra check op
-// `ingelogd` naast de CSS die de knop verbergt: alleen beheerders mogen dit.
+// Knop op het bestelscherm waarmee een beheerder de kassalade handmatig kan
+// openen (bv. om wisselgeld te pakken). De check op magKassaladeOpenen() staat
+// hier nogmaals, naast het verbergen van de knop zelf.
 async function kassaladeHandmatigOpenen() {
-  if (!ingelogd) return;
+  if (!magKassaladeOpenen()) return;
   const url = getPrinterUrl();
   if (!url) { toonToast('⚠️ Geen printer ingesteld — kassalade kan niet geopend worden'); return; }
   await openKassalade();
@@ -3094,6 +3102,7 @@ function selecteerLid(uid) {
   document.getElementById('gast-plek').textContent = 'Plek ' + gast.plek + ' · handmatig geselecteerd';
   updateOpenstaand();
   updateMijnPincodeKnop();
+  updateKassaladeKnop();
   renderProducten();
   renderWinkelwagen();
   updateAfrekenenBlok();
