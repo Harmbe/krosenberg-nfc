@@ -429,17 +429,32 @@
       </div>
     </div>
 
-    <p class="measure">De kassa-app hangt onder de reserveringen-app: die weet al welke plek bij welk bandje hoort, en haalt de naam daar op. Diezelfde koppeling — plek aan lid — bepaalt straks ook op welke grootboekrekening een overnachting terechtkomt.</p>
+    <p class="measure">De reserveringen-app kent hiervoor twee situaties, want niet elk lid heeft een vaste plek: er zijn meer (kandidaat-)leden dan vaste plekken, dus staan leden zonder plek op de wachtlijst, en daarnaast zijn er leden die bewust geen vaste plek willen en alleen contributie betalen, geen jaargeld.</p>
 
-    <div class="callout">
-      <div class="label">Bestond al, bleek achteraf</div>
-      <p>Dit had ik fout in de vorige versie: ik dacht dat deze ledenlijst nog gebouwd moest worden. Bij het uitzoeken bleek de reserveringen-app hem al te hebben — <code>lid_account</code> (naam, e-mail) gekoppeld via <code>plek.eigenaar_lid_id</code>, gebouwd voor de contributiemodule en instelbaar in Beheer bij elke vaste plek. Alleen kwam die koppeling nergens naar buiten: de kassa kende alleen <code>/api/kassa/gastenplekken</code>, en dat endpoint geeft juist expliciet <em>geen</em> vaste plekken terug. Ik heb er een nieuw endpoint bij gezet, <code>/api/kassa/ledenplekken</code>, dat teruggeeft welke pleknummers aan een lid gekoppeld zijn — zelfde publieke, ongeauthenticeerde opzet als de bestaande kassa-endpoints, en zonder naam of e-mailadres erin, want die heeft de kassa hier niet voor nodig. Dat dekt de vaste plekken; zie de callout hieronder voor wie geen vaste plek heeft.</p>
+    <div class="tabelblok">
+      <div class="kop">Hoe de kassa een lid herkent</div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Situatie</th><th>Bron</th><th>Endpoint</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Lid met een vaste plek</td>
+              <td><code>lid_account</code> (naam, e-mail) gekoppeld via <code>plek.eigenaar_lid_id</code> — bestaat al voor de contributiemodule, instelbaar in Beheer bij elke vaste plek</td>
+              <td><code>/api/kassa/ledenplekken</code></td>
+            </tr>
+            <tr>
+              <td>Lid zonder vaste plek, verblijft op een verhuurplek</td>
+              <td><code>boeking.via_lid</code> — staat op <code>true</code> zodra een ingelogd lid via het ledenportaal boekt, op elke plek</td>
+              <td><code>/api/kassa/ledenboekingen</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <div class="callout keuze">
-      <div class="label">Wat nog niet gedekt is</div>
-      <p>Dit had ik ook nog fout: ik dacht aan een lid dat naast de eigen vaste plek incidenteel een verhuurplek bijboekt — dat gebeurt in de praktijk niet. Het échte gat is een andere groep: er zijn meer (kandidaat-)leden dan vaste plekken, dus staan leden zonder plek op de wachtlijst; daarnaast zijn er leden die bewust geen vaste plek willen en alleen contributie betalen, geen jaargeld. Beide groepen hebben geen plek om aan te koppelen — <code>plek.eigenaar_lid_id</code> bestaat domweg niet voor ze — maar kunnen wél op een verhuurplek verblijven. Voor precies dit geval bestaat er al een ander signaal: <code>boeking.via_lid</code> staat op <code>true</code> zodra een ingelogd lid via het ledenportaal boekt, op elke plek, ongeacht een vaste plek. Die wordt vandaag al getoond aan de gastendienst, maar nog niet doorgegeven aan de kassa — dat is het echte vervolg op <code>/api/kassa/ledenplekken</code>.</p>
-    </div>
+    <p class="measure">Beide endpoints geven alleen pleknummers terug — nooit een naam of e-mailadres, want daar heeft de kassa dit onderscheid niet voor nodig. Een lid identificeert zich bij de kassa altijd via een NFC-bandje of -kaart, nooit door zelf een pleknummer in te typen, dus beide endpoints hangen aan de plek, niet aan een persoonlijke login.</p>
   </section>
 
   <section>
@@ -610,8 +625,8 @@
       </div>
       <div class="fase">
         <span class="nr">04</span>
-        <span class="titel">Ledenlijst en plekkoppeling <span class="pil wacht" style="margin-left:0.5em">deels klaar</span></span>
-        <p>Voor vaste plekken staat het er: de reserveringen-app geeft nu aan de kassa door welke pleknummers aan een lid horen. Voor leden zonder vaste plek (wachtlijst, of bewust geen jaargeld) nog niet — dat loopt straks via <code>boeking.via_lid</code> op de actieve boeking, niet via de plek. Zonder dit kan een deel van de leden nog niet als lid worden herkend als ze op een verhuurplek verblijven.</p>
+        <span class="titel">Ledenlijst en plekkoppeling <span class="pil klaar" style="margin-left:0.5em">klaar</span></span>
+        <p>De reserveringen-app geeft nu aan de kassa door welke pleknummers aan een lid horen — voor vaste plekken via <code>/api/kassa/ledenplekken</code>, voor leden zonder vaste plek die op een verhuurplek verblijven via <code>/api/kassa/ledenboekingen</code>. Dit was de voorwaarde voor de volgende stap: zonder dit kan geen enkele boeking als lid of gast worden herkend.</p>
       </div>
       <div class="fase">
         <span class="nr">05</span>
@@ -642,7 +657,7 @@
   </section>
 
   <footer>
-    Opgesteld op basis van een read-only verkenning van de Conscribo-administratie en het datamodel van de reserveringen-app en de kassa-app (augustus 2026). Er is bij die verkenning niets in Conscribo gewijzigd. Het endpoint <code>/api/kassa/ledenplekken</code> in de reserveringen-app is wél gebouwd en gepusht — puur leesend, geen bestaande route of tabel aangepast.
+    Opgesteld op basis van een read-only verkenning van de Conscribo-administratie en het datamodel van de reserveringen-app en de kassa-app (augustus 2026). Er is in Conscribo niets gewijzigd. De endpoints <code>/api/kassa/ledenplekken</code> en <code>/api/kassa/ledenboekingen</code> in de reserveringen-app staan er al — puur leesend, geen bestaande route of tabel aangepast.
   </footer>
 
 </div>
