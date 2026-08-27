@@ -106,7 +106,11 @@
   }
 
   .nfc-icon:hover { transform: scale(1.05); background: var(--kr-forest); }
-  .nfc-icon:hover span { filter: invert(1); }
+  /* De SVG erft zijn lijnkleur via currentColor, dus omkleuren op hover is
+     genoeg — het oude filter:invert(1) was voor de emoji en maakte van de
+     lijntekening een vieze inverse. */
+  .nfc-icon span { display: flex; color: var(--kr-forest); transition: color 0.3s; }
+  .nfc-icon:hover span { color: var(--kr-cream); }
 
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes pulse {
@@ -1133,7 +1137,22 @@
 
     <!-- Bandje scannen -->
     <div class="tap-card">
-      <div class="nfc-icon"><span>📡</span></div>
+      <!-- Kaartlezer met een bandje/pas ervoor: de 📡 die hier eerst stond las
+           als "signaal" en gaf niet weg dát er een los apparaat is waar je het
+           bandje tegenaan houdt (mensen hielden het voor het scherm). -->
+      <div class="nfc-icon"><span>
+        <svg viewBox="0 0 64 64" width="74" height="74" fill="none" stroke="currentColor"
+             stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <!-- bandje/pas die je ervoor houdt -->
+          <rect x="17" y="3" width="30" height="19" rx="3" transform="rotate(-10 32 12.5)"/>
+          <!-- contactloos-golven, vanuit de lezer omhoog -->
+          <path d="M25.5 40a6.5 6.5 0 0 1 13 0"/>
+          <path d="M20 40a12 12 0 0 1 24 0"/>
+          <!-- de lezer zelf -->
+          <rect x="6" y="45" width="52" height="16" rx="4"/>
+          <line x1="14" y1="53" x2="19" y2="53"/>
+        </svg>
+      </span></div>
       <h2>Houd bandje voor de lezer</h2>
       <p>Scan je NFC-bandje om consumpties te registreren</p>
       <p id="nfc-status" style="margin-top:16px;font-size:0.8rem;color:var(--kr-muted)">Klaar voor scan…</p>
