@@ -436,25 +436,23 @@
       <div class="scroll">
         <table>
           <thead>
-            <tr><th>Situatie</th><th>Bron</th><th>Endpoint</th></tr>
+            <tr><th>Situatie</th><th>Hoe</th></tr>
           </thead>
           <tbody>
             <tr>
               <td>Lid met een vaste plek</td>
-              <td><code>lid_account</code> (naam, e-mail) gekoppeld via <code>plek.eigenaar_lid_id</code> — bestaat al voor de contributiemodule, instelbaar in Beheer bij elke vaste plek</td>
-              <td><code>/api/kassa/ledenplekken</code></td>
+              <td>Krijgt automatisch een <strong>eigen, persoonlijk kassa-account</strong> (naam en pleknummer, geen los endpoint nodig) zodra een beheerder in Beheer &gt; Contributie de plek aan dat lid koppelt — bestond al, voor de contributiemodule. Er is dan nog wél een handmatige stap: een kassabeheerder moet zelf nog een NFC-bandje of -kaart aan dat account koppelen, precies zoals bij elk ander lid — daar verandert dit niets aan.</td>
             </tr>
             <tr>
               <td>Lid zonder vaste plek, verblijft op een verhuurplek</td>
-              <td><code>boeking.via_lid</code> — staat op <code>true</code> zodra een ingelogd lid via het ledenportaal boekt, op elke plek</td>
-              <td><code>/api/kassa/ledenboekingen</code></td>
+              <td>Deelt de gedeelde kassarekening van die verhuurplek met iedereen die er ooit verblijft — er is geen eigen account. <code>/api/kassa/ledenboekingen</code> geeft aan of de vandaag actieve boeking op die plek <code>via_lid</code> heeft, zodat de kassa het onderscheid alsnog kan maken.</td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <p class="measure">Beide endpoints geven alleen pleknummers terug — nooit een naam of e-mailadres, want daar heeft de kassa dit onderscheid niet voor nodig. Een lid identificeert zich bij de kassa altijd via een NFC-bandje of -kaart, nooit door zelf een pleknummer in te typen, dus beide endpoints hangen aan de plek, niet aan een persoonlijke login.</p>
+    <p class="measure"><code>/api/kassa/ledenboekingen</code> geeft alleen pleknummers terug — nooit een naam of e-mailadres. Een lid zonder vaste plek identificeert zich bij de kassa altijd via een NFC-bandje of -kaart, nooit door zelf een pleknummer in te typen, dus dit endpoint hangt aan de plek van de boeking, niet aan een persoonlijke login.</p>
   </section>
 
   <section>
@@ -660,7 +658,7 @@
       <div class="fase">
         <span class="nr">04</span>
         <span class="titel">Ledenlijst en plekkoppeling <span class="pil klaar" style="margin-left:0.5em">klaar</span></span>
-        <p>De reserveringen-app geeft nu aan de kassa door welke pleknummers aan een lid horen — voor vaste plekken via <code>/api/kassa/ledenplekken</code>, voor leden zonder vaste plek die op een verhuurplek verblijven via <code>/api/kassa/ledenboekingen</code>. Dit was de voorwaarde voor de volgende stap: zonder dit kan geen enkele boeking als lid of gast worden herkend.</p>
+        <p>Voor vaste plekken bestond dit al: de kassa krijgt automatisch een eigen account per lid zodra een plek wordt toegewezen. Voor leden zonder vaste plek op een verhuurplek is dat er nu ook, via <code>/api/kassa/ledenboekingen</code>. Dit was de voorwaarde voor de volgende stap: zonder dit kan geen enkele boeking als lid of gast worden herkend.</p>
       </div>
       <div class="fase">
         <span class="nr">05</span>
@@ -693,7 +691,7 @@
   </section>
 
   <footer>
-    Opgesteld op basis van een read-only verkenning van de Conscribo-administratie en het datamodel van de reserveringen-app en de kassa-app (augustus 2026). Er is in Conscribo niets gewijzigd. De endpoints <code>/api/kassa/ledenplekken</code> en <code>/api/kassa/ledenboekingen</code> in de reserveringen-app staan er al — puur leesend, geen bestaande route of tabel aangepast.
+    Opgesteld op basis van een read-only verkenning van de Conscribo-administratie en het datamodel van de reserveringen-app en de kassa-app (augustus 2026). Er is in Conscribo niets gewijzigd. Het endpoint <code>/api/kassa/ledenboekingen</code> in de reserveringen-app staat er al — puur leesend, geen bestaande route of tabel aangepast.
   </footer>
 
 </div>
