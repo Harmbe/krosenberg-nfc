@@ -2547,7 +2547,7 @@ async function bevestigBestelling() {
     if (triggers.length) {
       const toon = veld => triggers.some(inst => inst[veld]);
       printBon({
-        naam: gast.naam, plek: gast.plek, items, totaal,
+        naam: gast.naam, plek: gast.plek, type: gast.type, items, totaal,
         toonNaam: toon('toon_naam'), toonPlek: toon('toon_plek'),
         toonTijd: toon('toon_tijd'), toonPrijs: toon('toon_prijs'),
       });
@@ -2990,7 +2990,7 @@ async function gastRekentAf(wijze = 'contant') {
   // is ingesteld.
   if (_openBetaalLog.length > 0) {
     printAfrekening({
-      naam: gast.naam, plek: gast.plek,
+      naam: gast.naam, plek: gast.plek, type: gast.type,
       groepen: _groepeerLogOpDatum(_openBetaalLog),
       totaal: betaaldBedrag,
     });

@@ -56,6 +56,14 @@ def schrijf_regel(p, tekst):
     # trekken.
     p.text(tekst + '\n\n')
 
+# Het label voor de naamregel hangt af van het soort record: een verhuurplek
+# is een gast, een ledenbandje niet. Bestuur/commissie ('intern') zijn ook
+# gewoon lid, dus die krijgen hetzelfde label. Stuurt de kassa-app geen type
+# mee (oudere versie), dan blijft het oude gedrag staan: 'Gast'.
+# Op 4 tekens gehouden zodat de regel uitlijnt met 'Plek : ' en 'Tijd : '.
+def naam_label(data):
+    return {'gast': 'Gast', 'lid': 'Lid', 'intern': 'Lid'}.get(data.get('type'), 'Gast').ljust(4)
+
 def print_bon(p, data):
     naam     = data.get('naam', '?')
     plek     = data.get('plek', '?')
@@ -77,7 +85,7 @@ def print_bon(p, data):
     p.text('─' * 32 + '\n')
 
     p.set(align='left')
-    if toon_naam: schrijf_regel(p, f'Gast : {naam}')
+    if toon_naam: schrijf_regel(p, f'{naam_label(data)} : {naam}')
     if toon_plek: schrijf_regel(p, f'Plek : {plek}')
     if toon_tijd: schrijf_regel(p, f'Tijd : {tijdstip}')
     p.text('─' * 32 + '\n')
@@ -128,7 +136,7 @@ def print_afrekening(p, data):
     p.text('─' * 32 + '\n')
 
     p.set(align='left')
-    schrijf_regel(p, f'Gast : {naam}')
+    schrijf_regel(p, f'{naam_label(data)} : {naam}')
     schrijf_regel(p, f'Plek : {plek}')
     p.text('─' * 32 + '\n')
 
