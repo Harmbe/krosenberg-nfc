@@ -502,8 +502,8 @@
     <div class="journaal">
       <div class="kop">Dagstaat kassa · 27-08-2026 · ref <span class="num">KASSA-2026-08-27</span></div>
       <div class="regels">
-        <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10030</span> Kas kantine</span><span class="bedrag">184,50</span></div>
-        <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10010</span> Bankrekening <span style="color:var(--ink-faint)">(pin)</span></span><span class="bedrag">312,75</span></div>
+        <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10030</span> Kas kantine <span style="color:var(--ink-faint)">— contant</span></span><span class="bedrag">184,50</span></div>
+        <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10025*</span> Nog te ontvangen via Mollie <span style="color:var(--ink-faint)">— QR/iDEAL</span></span><span class="bedrag">312,75</span></div>
         <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">83010</span> Kantine opbrengsten <span style="color:var(--ink-faint)">— drank</span></span><span class="bedrag">301,40</span></div>
         <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">83020</span> Culicom opbrengsten <span style="color:var(--ink-faint)">— eten</span></span><span class="bedrag">142,85</span></div>
         <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">84060</span> Sauna opbrengsten</span><span class="bedrag">38,00</span></div>
@@ -511,7 +511,7 @@
       </div>
     </div>
 
-    <p class="measure">De splitsing contant/pin heeft de kassa al, want die bepaalt ook of de kassalade opengaat.</p>
+    <p class="measure">De splitsing contant/QR heeft de kassa al, want die bepaalt ook of de kassalade opengaat. Er is geen aparte pinautomaat: de knop "QR / iDEAL" toont nu nog een neptest-QR-code, en wordt in productie een echte Mollie-betaling. * Het rekeningnummer hierboven is indicatief — er bestaat al een <code>TEST: te ontvangen via Mollie</code>, maar nog geen live versie; zie de sectie hieronder.</p>
 
     <div class="callout gat">
       <div class="label">Twee dingen te bevestigen</div>
@@ -521,6 +521,11 @@
     <div class="callout keuze">
       <div class="label">Bewuste keuze</div>
       <p>De omzet valt op de dag van betálen, niet op de dag van consumeren. Wie de hele week aftapt en zondag afrekent, telt dus mee op zondag. Dat is voor een kantine heel normaal en scheelt een debiteurenadministratie per gast. De keerzijde: wat op 31 december nog openstaat, is dat jaar nog niet geboekt. De kassa kan daarvoor per jaareinde één totaalbedrag per categorie opleveren, zodat je dat met een memoriaalboeking rechttrekt.</p>
+    </div>
+
+    <div class="callout gat">
+      <div class="label">Een derde stroom, buiten de kassa om</div>
+      <p>Naast afrekenen aan de bar kan de gastendienst bij het uitchecken een openstaand kantinebedrag ook per betaallink versturen. Dat zet de kassarekening van de plek direct op nul; het geld komt daarna via Mollie binnen, en de betaling wordt bijgehouden in de reserveringen-app zelf (op de boeking, niet in de kassa's eigen betalingen-tabel). Deze omzet zit dus niet in de dagstaat van de kassa — die moet er apart bij, uit de reserveringen-app, anders verdwijnt hij stilzwijgend. Landt op dezelfde rekeningen als de kantine-dagstaat (<code>83010</code>/<code>83020</code>), via dezelfde Mollie-tussenrekening die hieronder staat.</p>
     </div>
 
     <h3>Reserveringen</h3>
@@ -545,7 +550,7 @@
       </div>
     </div>
 
-    <p class="measure">Of het de linker- of de rechterkolom wordt, hangt af van of de plek van de boeking gekoppeld is aan iemand uit de ledenlijst hierboven. Mét elektra of zonder volgt uit de plek zelf — de app weet dat al.</p>
+    <p class="measure">Of het de linker- of de rechterkolom wordt, hangt af van of de plek van de boeking gekoppeld is aan iemand uit de ledenlijst hierboven. Mét elektra of zonder volgt uit de plek zelf — de app weet dat al. Alle reserveringsbetalingen (aanbetaling, restbetaling, volledig) lopen al via een echte, webhook-bevestigde Mollie-betaling — geen demo zoals bij de kassa. Ook dat geld gaat eerst naar de Mollie-tussenrekening, niet rechtstreeks de bank in.</p>
 
     <div class="callout gat">
       <div class="label">Hier moet de app ook worden uitgebreid</div>
@@ -559,6 +564,34 @@
   </section>
 
   <section>
+    <h2>Van Mollie naar de bank</h2>
+    <p class="measure">Mollie betaalt niet per transactie uit. Bedragen worden gebundeld — meestal dagelijks — en pas dagen later als één totaal op de bankrekening gestort, na aftrek van Mollie's eigen transactiekosten. Rechtstreeks naar <code>10010 Bankrekening</code> boeken zodra een klant "betaald" klikt, klopt dus op twee manieren niet: het bedrag is te hoog (kosten zitten er nog in) en het moment is te vroeg (het geld staat er nog niet).</p>
+
+    <p class="measure">Daarom loopt elke Mollie-betaling via een tussenrekening: op het moment van betalen wordt de omzet erkend (zoals in de dagstaten hierboven), en pas als Mollie daadwerkelijk uitbetaalt, wordt die tussenrekening tegen de bank weggestreept.</p>
+
+    <div class="journaal">
+      <div class="kop">Mollie-uitbetaling · 28-08-2026 · ref <span class="num">MOLLIE-2026-W35</span></div>
+      <div class="regels">
+        <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">10010</span> Bankrekening</span><span class="bedrag">841,25</span></div>
+        <div class="jr d"><span class="zijde">Debet</span><span class="rekening"><span class="num">41030</span> Bankkosten <span style="color:var(--ink-faint)">— Mollie-transactiekosten</span></span><span class="bedrag">8,75</span></div>
+        <div class="jr c"><span class="zijde">Credit</span><span class="rekening"><span class="num">10025*</span> Nog te ontvangen via Mollie</span><span class="bedrag">850,00</span></div>
+      </div>
+    </div>
+
+    <p class="measure">Dat <code>850,00</code> is de som van alle Mollie-betalingen die in die uitbetalingsperiode zijn bevestigd — kantine aan de kassa, kantine per betaallink, én reserveringen door elkaar, want het is aannemelijk dat er straks één Mollie-account voor beide apps wordt gebruikt en Mollie dat niet per bron uitsplitst. De tussenrekening hoort dus na elke uitbetaling weer op nul te staan; staat er iets op, dan is er een bevestigde betaling die nog niet is uitbetaald (normaal, tot de volgende ronde) of klopt er iets niet.</p>
+
+    <div class="callout gat">
+      <div class="label">Bestaat al als TEST, nog niet als live rekening</div>
+      <p>Het grootboek heeft al <code>10025 TEST: te ontvangen via Mollie</code> — kennelijk had iemand deze exacte constructie al voorzien. Er bestaat alleen nog geen niet-TEST versie; die moet worden aangemaakt voordat hier iets naartoe geboekt kan worden. Het rekeningnummer <code>10025*</code> in de voorbeelden hierboven is een gok op basis van het patroon van de andere TEST-rekeningen — het echte nummer bepaal jij.</p>
+    </div>
+
+    <div class="callout keuze">
+      <div class="label">Twee soorten Mollie-betaling, verschillend bevestigd</div>
+      <p>Reserveringen (en de kantine-betaallink bij uitchecken) zijn al een <strong>echte</strong> Mollie-betaling, bevestigd via Mollie's eigen webhook — pas als Mollie zelf "betaald" meldt, wordt de boeking als betaald gemarkeerd. De kassa's eigen QR-knop werkt nu nog anders: de medewerker achter de bar ziet de gast betalen en klikt zelf op "Betaling ontvangen", zonder dat de kassa ooit bij Mollie natrekt of dat bedrag ook echt is binnengekomen. Voor een bar met toezicht is dat waarschijnlijk prima, maar het is wel een lager bevestigingsniveau dan de rest — de moeite waard om je bewust van te zijn, ook al hoeft het geen showstopper te zijn.</p>
+    </div>
+  </section>
+
+  <section>
     <h2>Wat de penningmeester ziet</h2>
     <p class="measure">Eén scherm in het beheer, met de klaarstaande dagstaten. Niets gaat het grootboek in zonder dat hier iemand op heeft geklikt.</p>
 
@@ -568,9 +601,10 @@
       <div class="rij"><span>Kassa — zondag 24 augustus</span><span class="bedrag">€ 213,80</span><button class="knop">Boeken</button></div>
       <div class="rij"><span>Reserveringen — week 34</span><span class="bedrag">€ 1.284,00</span><button class="knop">Boeken</button></div>
       <div class="rij"><span>Kassa — maandag 25 augustus</span><span class="bedrag">€ 46,10</span><span class="pil wacht">dag loopt nog</span></div>
+      <div class="rij"><span>Mollie-uitbetaling — 28 augustus</span><span class="bedrag">€ 841,25</span><button class="knop">Boeken</button></div>
     </div>
 
-    <p class="measure">Eén regel per dag, ook al zit er drank, eten, sauna en wasserette in — doorklikken laat de creditregels per categorie zien, de onderliggende bonnen, en de journaalpost die eruit volgt. Zo is controleren geen kwestie van vertrouwen. Een geboekte regel toont het transactienummer uit Conscribo en is niet nog eens te boeken.</p>
+    <p class="measure">Eén regel per dag, ook al zit er drank, eten, sauna en wasserette in — doorklikken laat de creditregels per categorie zien, de onderliggende bonnen, en de journaalpost die eruit volgt. Zo is controleren geen kwestie van vertrouwen. Een geboekte regel toont het transactienummer uit Conscribo en is niet nog eens te boeken. De Mollie-uitbetaling staat er apart bij: die verschijnt pas zodra Mollie zelf een bedrag heeft overgemaakt, dus onregelmatiger dan de dagelijkse dagstaten.</p>
   </section>
 
   <section>
@@ -611,12 +645,12 @@
       <div class="fase">
         <span class="nr">01</span>
         <span class="titel">Proefdraaien op de TEST-rekeningen</span>
-        <p>De kassa-dagstaat, met alle vier de categorieën, een paar weken naar de TEST-rekeningen boeken en naast de handmatige boeking leggen. Wijkt er iets af, dan kost dat niets. Dit is ook het moment om te horen van wie die rekeningen zijn en of er al een plan achter zat.</p>
+        <p>De kassa-dagstaat, met alle vier de categorieën én de Mollie-tussenrekening, een paar weken naar de TEST-rekeningen boeken en naast de handmatige boeking leggen. Wijkt er iets af, dan kost dat niets. De bestaande <code>TEST: te ontvangen via Mollie</code> is hier meteen bruikbaar. Dit is ook het moment om te horen van wie die rekeningen zijn en of er al een plan achter zat.</p>
       </div>
       <div class="fase">
         <span class="nr">02</span>
         <span class="titel">Sauna en wasserette live</span>
-        <p>Deze twee kunnen als eerste, want de rekeningen zijn eenduidig: <code>84060</code> en <code>84040</code> hebben elk maar één mogelijke betekenis. Geen aanname nodig, dus geen reden om te wachten.</p>
+        <p>Deze twee kunnen als eerste, want de rekeningen zijn eenduidig: <code>84060</code> en <code>84040</code> hebben elk maar één mogelijke betekenis. Geen aanname nodig, dus geen reden om te wachten — wel moet dan ook de live Mollie-tussenrekening bestaan, want ook deze categorieën komen deels per QR binnen.</p>
       </div>
       <div class="fase">
         <span class="nr">03</span>
@@ -647,6 +681,8 @@
       <li><strong>Een aparte API-gebruiker in Conscribo</strong>, met schrijfrechten op de financiële administratie. Niet een persoonlijk account: die rechten moeten los in te trekken zijn.</li>
       <li><strong>Duidelijkheid over de TEST-rekeningen</strong>: lopend werk of restant van een eerdere poging?</li>
       <li><strong>Bevestiging van de rekeningen voor drank en eten</strong>: is <code>83010 Kantine</code> / <code>83020 Culicom</code> inderdaad die verdeling, en waar horen <strong>ijs</strong> en <strong>overig</strong> — bestaande rekening of nieuwe?</li>
+      <li><strong>Een live rekening "Nog te ontvangen via Mollie"</strong>: er bestaat al een TEST-versie, maar geen live versie — welk rekeningnummer?</li>
+      <li><strong>Waar Mollie's transactiekosten geboekt worden</strong>: dit voorstel gaat uit van de bestaande <code>41030 Bankkosten</code>, tenzij je een aparte regel wilt.</li>
       <li><strong>Een voorkeur voor het ritme</strong>: per dag boeken, of per week samengevat? Per dag geeft het fijnste beeld, per week het kortste lijstje.</li>
     </ul>
 
