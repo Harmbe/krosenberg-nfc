@@ -143,3 +143,14 @@ create trigger leden_bijgewerkt before update on public.leden
 drop trigger if exists producten_bijgewerkt on public.producten;
 create trigger producten_bijgewerkt before update on public.producten
   for each row execute function public.update_bijgewerkt_op();
+
+-- ── server-autoritatieve schrijflaag (zie migrations/20260829_04) ──────────
+-- Functies : kassa_herbereken_openstaand(text)  — loopsaldo-recompute
+--            kassa__tg_openstaand()             — trigger op consumptie_log/betalingen
+--            kassa__leden_openstaand_afgeleid() — maakt leden.openstaand read-only
+--            kassa_boek_consumptie(uuid,text,jsonb,timestamptz)  — RPC (idempotent)
+--            kassa_reken_af(uuid,text,text,timestamptz)          — RPC (idempotent)
+--            kassa_vul_voorraad_aan(uuid,uuid,int,text)          — RPC (idempotent)
+-- Triggers : consumptie_log_openstaand, betalingen_openstaand (after row)
+--            leden_openstaand_afgeleid (before row)
+-- De volledige definities staan in migrations/20260829_04_kassa_schrijflaag.sql.
