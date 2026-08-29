@@ -2568,26 +2568,36 @@ async function registreerWinkelwagenItems(gast) {
   if (items.length === 0) return null;
   const totaal = items.reduce((s,[,v]) => s + v.prijs * v.aantal, 0);
 
-  // Schrijf log EERST — daarna openstaand berekenen
+  // Boek de bestelling via de RPC. product_id's uit de in-memory catalogus;
+  // prijs/naam/voorraad worden server-side afgehandeld.
   const omschrijving = items.map(([naam, v]) => `${v.aantal}× ${naam}`).join(', ');
-  await DB.voegLogToe({ lid_uid: gast.uid, naam: gast.naam, omschrijving, items, totaal });
+  const rpcItems = items
+    .map(([naam, v]) => ({ product_id: (producten.find(x => x.naam === naam) || {}).id, aantal: v.aantal }))
+    .filter(i => i.product_id);
+  const rpcRes = await DB.voegLogToe({ lid_uid: gast.uid, naam: gast.naam, omschrijving, items, totaal, rpcItems });
 
-  // Voorraadupdates parallel
-  await Promise.all(items.map(async ([naam, v]) => {
+  // Voorraad lokaal bijwerken voor de directe weergave — de RPC heeft het
+  // server-side al atomair afgeboekt; niet meer zelf naar Supabase schrijven.
+  for (const [naam, v] of items) {
     const p = producten.find(x => x.naam === naam);
     if (p && p.voorraad !== null && p.voorraad !== undefined && p.voorraad !== '') {
       p.voorraad = Math.max(0, p.voorraad - v.aantal);
-      await DB.upsertProduct(p);
+      await db.producten.put(p);
     }
-  }));
+  }
 
-  // Openstaand ophalen uit de log (betrouwbaar)
-  const alleLog = await DB.getLog();
-  const alleBetalingen = await DB.getBetalingen();
-  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === gast.uid).map(b => b.betaald_op).sort();
-  const laatste = betalingenLid[betalingenLid.length - 1] || null;
-  gast.openstaand = Math.round(alleLog.filter(r => r.lid_uid === gast.uid && (!laatste || r.geregistreerd_op > laatste)).reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
-  await DB.upsertLid(gast);
+  // openstaand komt uit de RPC (server-autoritatief, loopsaldo); offline een
+  // lokale schatting. Alleen lokaal cachen — de server-trigger houdt het bij.
+  if (rpcRes && rpcRes.openstaand != null) {
+    gast.openstaand = Number(rpcRes.openstaand);
+  } else {
+    const alleLog = await DB.getLog();
+    const alleBet = await DB.getBetalingen();
+    const consL = alleLog.filter(r => r.lid_uid === gast.uid).reduce((s, r) => s + Number(r.totaal || 0), 0);
+    const betL  = alleBet.filter(b => b.lid_uid === gast.uid).reduce((s, b) => s + Number(b.bedrag || 0), 0);
+    gast.openstaand = Math.max(0, Math.round((consL - betL) * 100) / 100);
+  }
+  await db.leden.put(gast);
 
   // Automatisch bon printen — welke categorieën dat triggeren en welke
   // velden dan getoond worden, staat per categorie ingesteld bij Artikelen.
@@ -3209,25 +3219,28 @@ function _groepeerLogOpDatum(logRijen) {
 async function gastRekentAf(wijze = 'contant') {
   const gast = gasten[huidigeBandje];
   const openLog = _openBetaalLog.map(r => ({ tijd: new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}), omschrijving: r.omschrijving || '—', totaal: Number(r.totaal || 0) }));
-  const betaaldBedrag = openLog.reduce((s,r) => s + r.totaal, 0) || Number(gast.openstaand) || 0;
+  const schatting = openLog.reduce((s,r) => s + r.totaal, 0) || Number(gast.openstaand) || 0;
 
-  await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag: betaaldBedrag, wijze });
-  await rondAfrekeningLokaalAf(gast, betaaldBedrag);
+  // Het bedrag bepaalt de server (loopsaldo). schatting is alleen de
+  // offline-terugval voor de lokale betalingen-rij + de bon.
+  const res = await DB.rekenAf({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, wijze, schatting });
+  const betaaldBedrag = res?.bedrag ?? schatting;
+  await rondAfrekeningLokaalAf(gast, betaaldBedrag, res?.openstaand);
 }
 
 // Gedeeld staartstuk van een afrekening: statusregels, bon printen, bon
 // mailen. Twee aanroeppaden: gastRekentAf() hierboven (contant/staff-
-// bevestigd, schrijft de betaling zelf eerst weg) en qrBetalingBevestigd()
+// bevestigd, boekt de betaling zelf via DB.rekenAf()) en qrBetalingBevestigd()
 // (de betaling is dán al server-side weggeschreven door de Mollie-webhook
 // — dit hier nogmaals doen zou de omzet verdubbelen, dus die roept alleen
-// dít staartstuk aan, niet DB.voegBetalingToe()).
-async function rondAfrekeningLokaalAf(gast, betaaldBedrag) {
+// dít staartstuk aan, niet DB.rekenAf()).
+async function rondAfrekeningLokaalAf(gast, betaaldBedrag, nieuwOpenstaand) {
   const openLog = _openBetaalLog.map(r => ({ tijd: new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}), omschrijving: r.omschrijving || '—', totaal: Number(r.totaal || 0) }));
 
   _verwerkingRegel(1, `✓ ${gast.naam} afgerekend — €${betaaldBedrag.toFixed(2).replace('.', ',')}`);
   if (isOnline && openLog.length > 0) _verwerkingRegel(2, `📧 Bon wordt verzonden…`);
-  gast.openstaand = 0;
-  await DB.upsertLid(gast);
+  gast.openstaand = nieuwOpenstaand != null ? Number(nieuwOpenstaand) : 0;
+  await db.leden.put(gast);
 
   // Papieren bon van de zojuist afgehandelde afrekening — ongeacht
   // betaalwijze, gegroepeerd per datum met de artikelen van die dag
@@ -3259,19 +3272,20 @@ async function rondAfrekeningLokaalAf(gast, betaaldBedrag) {
 async function afrekenen(uid, wijze) {
   wijze = wijze || 'contant';
   const gast = gasten[uid];
-  // Bereken openstaand live uit log
+  // Openregels alleen voor de bon-mail; het af te rekenen bedrag bepaalt de server.
   const alleLog = await DB.getLog();
   const alleBetalingen = await DB.getBetalingen();
   const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
   const laatste = betalingenLid[betalingenLid.length - 1] || null;
   const openLog = alleLog.filter(r => r.lid_uid === uid && (!laatste || r.geregistreerd_op > laatste));
-  const bedrag = Math.round(openLog.reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
+  const schatting = Math.round(openLog.reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
 
-  if (bedrag <= 0) { toonToast('Geen openstaand bedrag'); return; }
+  if (schatting <= 0 && Number(gast.openstaand || 0) <= 0) { toonToast('Geen openstaand bedrag'); return; }
 
-  await DB.voegBetalingToe({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, bedrag, wijze });
-  gast.openstaand = 0;
-  await DB.upsertLid(gast);
+  const res = await DB.rekenAf({ lid_uid: gast.uid, naam: gast.naam, plek: gast.plek, wijze, schatting });
+  const bedrag = res?.bedrag ?? schatting;
+  gast.openstaand = res?.openstaand != null ? Number(res.openstaand) : 0;
+  await db.leden.put(gast);
   toonToast(`✓ ${gast.naam} afgerekend — €${bedrag.toFixed(2).replace('.', ',')}`);
 
   if (isOnline && gast.email && openLog.length > 0) {
@@ -3534,18 +3548,21 @@ async function vulVoorraadAan(productId) {
 
   const heeftInkoopEenheid = product.eenheden_per_inkoop && product.eenheden_per_inkoop > 1;
   const toegevoegd = heeftInkoopEenheid ? ingevoerdAantal * product.eenheden_per_inkoop : ingevoerdAantal;
-  const nieuweVoorraad = (product.voorraad || 0) + toegevoegd;
-  product.voorraad = nieuweVoorraad;
-  await DB.upsertProduct(product);
-  await DB.voegVoorraadLogToe({
+  const schattingVoorraad = (product.voorraad || 0) + toegevoegd;
+
+  // Voorraad + voorraad_log via de RPC (atomair, server-autoritatief).
+  const res = await DB.vulVoorraad({
     product_id: product.id,
     product_naam: product.naam,
     aantal: toegevoegd,
     inkoop_aantal: heeftInkoopEenheid ? ingevoerdAantal : null,
     inkoop_eenheid: heeftInkoopEenheid ? product.inkoopeenheid : null,
-    nieuwe_voorraad: nieuweVoorraad,
     door: ingelogdeNaam,
+    schattingVoorraad,
   });
+  const nieuweVoorraad = res?.nieuwe_voorraad ?? schattingVoorraad;
+  product.voorraad = nieuweVoorraad;            // lokale cache voor de weergave
+  await db.producten.put(product);
 
   toonToast(heeftInkoopEenheid
     ? `✓ ${ingevoerdAantal}× ${product.inkoopeenheid || 'inkoop'} = ${toegevoegd}x ${product.naam} bijgeboekt (nu ${nieuweVoorraad})`
