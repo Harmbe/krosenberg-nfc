@@ -143,7 +143,7 @@ async function activeerApparaat(sleutel) {
 // Primaire sleutel per tabel — nodig omdat delete()-aanroepen niet zomaar op
 // "id" mogen filteren: plekken/bandjes hebben een andere sleutelkolom, en een
 // verkeerde kolomnaam laat een delete stilzwijgend niets raken.
-const PRIMAIRE_SLEUTEL = { leden: 'uid', plekken: 'plek_code', bandjes: 'bandje_uid' };
+const PRIMAIRE_SLEUTEL = { leden: 'uid', plekken: 'plek_code', bandjes: 'bandje_uid', producten: 'id' };
 
 // ── Online status ──────────────────────────────────────────────────────────────
 let isOnline = navigator.onLine;
@@ -234,7 +234,30 @@ async function schrijfConsumptieOnline(entry) {
 }
 
 // ── Sync-wachtrij verwerken ────────────────────────────────────────────────────
+// syncWachtrij() wordt vanuit drie plekken aangeroepen (15s-interval, het
+// online-event én elke schrijf()). Zonder deze in-flight-guard konden twee
+// runs overlappen: allebei lazen ze dezelfde gesyncroniseerd==0-items en
+// verstuurden die dubbel — bij consumptie_regels (delete-dan-insert) leidde
+// dat tot dubbele of ontbrekende regels, en bij leden-upserts overschreef een
+// run met een stale gast.openstaand een net-gesyncte waarde. De guard
+// serialiseert alle runs; komt er tijdens een run nieuw werk binnen, dan
+// draait er direct erna nog één extra pass (_syncNogmaals).
+let _syncBezig = false;
+let _syncNogmaals = false;
 async function syncWachtrij() {
+  if (_syncBezig) { _syncNogmaals = true; return; }
+  _syncBezig = true;
+  try {
+    do {
+      _syncNogmaals = false;
+      await _syncWachtrijEenmaal();
+    } while (_syncNogmaals);
+  } finally {
+    _syncBezig = false;
+  }
+}
+
+async function _syncWachtrijEenmaal() {
   const wachtrij = await db.sync_queue.where('gesyncroniseerd').equals(0).toArray();
   for (const item of wachtrij) {
     const pogingen = item.pogingen || 0;
@@ -286,11 +309,61 @@ async function syncWachtrij() {
 }
 
 async function updateSyncBadge() {
-  const wachtend = await db.sync_queue.where('gesyncroniseerd').equals(0).count();
+  const wachtend  = await db.sync_queue.where('gesyncroniseerd').equals(0).count();
+  // gesyncroniseerd==2 = na 5 pogingen definitief opgegeven. Dat is een
+  // consumptie of betaling die de server nooit heeft gehaald — omzetverlies.
+  // Dat mag niet stil in een console.warn verdwijnen: hier zichtbaar en
+  // blijvend tonen tot beheer het heeft afgehandeld (zie verzamelMislukteSync).
+  const mislukt = await db.sync_queue.where('gesyncroniseerd').equals(2).count();
+
   const el = document.getElementById('sync-wachtrij');
-  if (el) el.textContent = wachtend > 0 ? `⏳ ${wachtend} wachtend` : '';
+  if (el) {
+    el.textContent = mislukt > 0
+      ? `⚠️ ${mislukt} NIET gesynchroniseerd — waarschuw beheer`
+      : (wachtend > 0 ? `⏳ ${wachtend} wachtend` : '');
+    el.style.color = mislukt > 0 ? '#e74c3c' : '#e67e22';
+    el.style.fontWeight = mislukt > 0 ? '700' : '400';
+  }
+
   const detail = document.getElementById('sync-wachtrij-detail');
-  if (detail) detail.textContent = wachtend > 0 ? `⏳ ${wachtend} item${wachtend === 1 ? '' : 's'} wachtend` : '✅ Alles gesynchroniseerd';
+  if (detail) {
+    if (mislukt > 0) {
+      detail.textContent = `⚠️ ${mislukt} transactie${mislukt === 1 ? '' : 's'} NIET gesynchroniseerd — noteer deze en waarschuw beheer`;
+      detail.style.color = '#e74c3c';
+      detail.style.fontWeight = '700';
+    } else {
+      detail.textContent = wachtend > 0 ? `⏳ ${wachtend} item${wachtend === 1 ? '' : 's'} wachtend` : '✅ Alles gesynchroniseerd';
+      detail.style.color = '';
+      detail.style.fontWeight = '';
+    }
+  }
+}
+
+// Ophalen van de definitief mislukte sync-items voor handmatige reconciliatie
+// door beheer (bedrag, lid, tijdstip). Aangeroepen vanuit het beheerscherm.
+async function verzamelMislukteSync() {
+  const items = await db.sync_queue.where('gesyncroniseerd').equals(2).toArray();
+  return items.map(it => {
+    let d = {};
+    try { d = JSON.parse(it.data); } catch {}
+    return {
+      id: it.id,
+      tabel: it.tabel,
+      actie: it.actie,
+      aangemaakt_op: it.aangemaakt_op,
+      lid_uid: d.lid_uid || d.uid || null,
+      naam: d.naam || null,
+      bedrag: d.totaal ?? d.bedrag ?? null,
+    };
+  });
+}
+
+// Zet een definitief mislukt item terug in de wachtrij voor een nieuwe poging
+// (nadat beheer bv. de verbinding heeft hersteld).
+async function herprobeerMislukteSync() {
+  const items = await db.sync_queue.where('gesyncroniseerd').equals(2).toArray();
+  for (const it of items) await db.sync_queue.update(it.id, { gesyncroniseerd: 0, pogingen: 0 });
+  await syncWachtrij();
 }
 
 // ── Initieel laden: Supabase → IndexedDB ──────────────────────────────────────
@@ -298,7 +371,13 @@ async function laadVanSupabase() {
   // Geen isOnline-gate meer — altijd proberen, de catch hieronder vangt een
   // echte netwerkfout al op (zie toelichting bij schrijf()).
   try {
-    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }, { data: categorieInstellingen }, { data: printerInstellingen }] =
+    // printer_instellingen wordt bewust NIET meer uit Supabase gehaald of naar
+    // Supabase geschreven: de printer-URL en -sleutel blijven per tablet lokaal
+    // (IndexedDB + localStorage). Reden: de sleutel opent ook de kassalade en
+    // was via de publieke anon-key uit te lezen én te overschrijven (bonnen
+    // omleiden). Bijkomend voordeel: elke tablet/locatie kan nu een eigen
+    // printer hebben.
+    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }, { data: categorieInstellingen }] =
       await Promise.all([
         supa.from('leden').select(LEDEN_KOLOMMEN),
         supa.from('producten').select('*'),
@@ -308,7 +387,6 @@ async function laadVanSupabase() {
         supa.from('bandjes').select('*'),
         supa.from('voorraad_log').select('*'),
         supa.from('categorie_instellingen').select('*'),
-        supa.from('printer_instellingen').select('*'),
       ]);
 
     if (leden)     await db.leden.bulkPut(leden);
@@ -322,7 +400,6 @@ async function laadVanSupabase() {
     if (bandjes)    await db.bandjes.bulkPut(bandjes);
     if (voorraadLog) await db.voorraad_log.bulkPut(voorraadLog);
     if (categorieInstellingen) await db.categorie_instellingen.bulkPut(categorieInstellingen);
-    if (printerInstellingen) await db.printer_instellingen.bulkPut(printerInstellingen);
   } catch (e) { console.warn('Supabase laden mislukt, gebruik lokale data', e); }
 }
 
@@ -373,12 +450,12 @@ const DB = {
   async getCategorieInstellingen() { return db.categorie_instellingen.toArray(); },
   async upsertCategorieInstelling(instelling) { await schrijf('categorie_instellingen', 'upsert', instelling); },
 
-  // Eén gedeelde rij (id 'globaal') zodat printer-URL en -sleutel maar op één
-  // tablet ingevuld hoeven te worden en daarna overal beschikbaar zijn —
-  // zelfde opzet als categorie_instellingen hierboven.
+  // Printer-URL en -sleutel blijven LOKAAL per tablet — nooit naar Supabase
+  // (de sleutel opent ook de kassalade en was via de anon-key uitleesbaar/
+  // overschrijfbaar). Elke tablet één keer instellen via Beheer → Printer.
   async getPrinterInstellingen() { return db.printer_instellingen.get('globaal'); },
   async upsertPrinterInstelling(instelling) {
-    await schrijf('printer_instellingen', 'upsert', { id: 'globaal', ...instelling, bijgewerkt_op: new Date().toISOString() });
+    await db.printer_instellingen.put({ id: 'globaal', ...instelling, bijgewerkt_op: new Date().toISOString() });
   },
 
   async getLog()       { return (await db.log.toArray()).sort((a,b) => b.geregistreerd_op?.localeCompare(a.geregistreerd_op)); },

@@ -7,9 +7,21 @@ Ontvangt bonnen van de tablet-app en stuurt ze naar de thermische USB-printer.
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import escpos.printer as escpos
-import datetime, hmac, os, sys
+import datetime, hmac, os, sys, re
 
 app = Flask(__name__)
+
+# Een bon-payload is klein (een paar regels tekst). Zonder deze limiet kan een
+# grote body de Pi het geheugen in jagen (request.get_json(force=True) leest
+# alles in). 64 KB is ruim voor de grootste afrekenbon.
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024
+
+# Alle control-characters behalve \n weghalen vóór het naar de printer gaat:
+# een lid/gast dat zijn naam met rauwe ESC/POS-bytes vult, zou anders de
+# printer kunnen herconfigureren of ongewenste output injecteren.
+_CTRL_RE = re.compile(r'[\x00-\x09\x0b-\x1f\x7f]')
+def scrub(s):
+    return _CTRL_RE.sub('', str(s if s is not None else ''))
 
 # Herkomst waarvandaan de tablet-app (Fully Kiosk) verzoeken mag sturen. Staat
 # standaard nog open (*) zodat een bestaande installatie na deze update blijft
@@ -65,8 +77,8 @@ def naam_label(data):
     return {'gast': 'Gast', 'lid': 'Lid', 'intern': 'Lid'}.get(data.get('type'), 'Gast').ljust(4)
 
 def print_bon(p, data):
-    naam     = data.get('naam', '?')
-    plek     = data.get('plek', '?')
+    naam     = scrub(data.get('naam', '?'))
+    plek     = scrub(data.get('plek', '?'))
     items    = data.get('items', [])   # [[naam, {prijs, aantal}], ...]
     totaal   = data.get('totaal', 0)
     tijdstip = datetime.datetime.now().strftime('%d-%m-%Y  %H:%M')
@@ -97,6 +109,7 @@ def print_bon(p, data):
             aantal, prijs = v.get('aantal', 1), v.get('prijs', 0)
         else:
             inaam, aantal, prijs = item.get('naam'), item.get('aantal', 1), item.get('prijs', 0)
+        inaam = scrub(inaam)
         regel = f'{aantal}x {inaam}'
         if toon_prijs:
             # Geen euroteken op de losse regels — alleen bij TOTAAL hieronder.
@@ -125,8 +138,8 @@ def print_afrekening(p, data):
     # Afrekenbon: consumpties gegroepeerd per datum (in plaats van per losse
     # bestelling) — meerdere keren hetzelfde artikel op één dag staat hier al
     # opgeteld op één regel (dat optellen gebeurt aan de kassa-app-kant).
-    naam    = data.get('naam', '?')
-    plek    = data.get('plek', '?')
+    naam    = scrub(data.get('naam', '?'))
+    plek    = scrub(data.get('plek', '?'))
     groepen = data.get('groepen', [])  # [{datum, regels: [[naam, {prijs, aantal}], ...]}, ...]
     totaal  = data.get('totaal', 0)
 
@@ -142,11 +155,12 @@ def print_afrekening(p, data):
 
     for groep in groepen:
         p.set(bold=True)
-        schrijf_regel(p, f"{groep.get('datum', '?')}")
+        schrijf_regel(p, scrub(groep.get('datum', '?')))
         p.set(bold=False)
         for regel in groep.get('regels', []):
             inaam, v = regel[0], regel[1]
             aantal, prijs = v.get('aantal', 1), v.get('prijs', 0)
+            inaam = scrub(inaam)
             regeltekst = f'  {aantal}x {inaam}'
             bedrag = f'{aantal * prijs:.2f}'.replace('.', ',')
             spaties = 32 - len(regeltekst) - len(bedrag)

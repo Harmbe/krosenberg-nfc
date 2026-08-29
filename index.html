@@ -1567,6 +1567,30 @@ function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// Veilige JS-stringliteral voor gebruik BINNEN een inline on*-handler, bv.
+// onclick="foo('${jsStr(x)}')". esc() (HTML-entities) volstaat daar NIET: de
+// HTML-parser decodeert &#39; terug naar ' vóór de JS-parser de handler
+// compileert, waarna een geprepareerde waarde (bv. een NFC-bandje-uid of een
+// artikelcategorie met leestekens) alsnog kan uitbreken. Backslash en quote
+// escapen, en < neutraliseren tegen een </script>-breakout.
+function jsStr(s) {
+  return String(s ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, '\\n')
+    .replace(/</g, '\\x3c');
+}
+
+// Een NFC-bandje-uid is hex, eventueel met : - of spatie als scheidingsteken —
+// nooit iets met leestekens die een HTML/JS-context kunnen breken. Bij het
+// koppelen hard afdwingen zodat een geprepareerd bandje (dat zich als
+// toetsenbord voordoet) of een geplakte waarde nooit als opgeslagen XSS in
+// het beheerscherm belandt.
+function geldigBandjeUid(s) {
+  return typeof s === 'string' && s.length >= 4 && s.length <= 40 && /^[0-9A-Fa-f: -]+$/.test(s);
+}
+
 // ── App-staat ────────────────────────────────────────────────────────────────
 
 let gasten = {};      // uid → object (in-memory cache)
@@ -2347,7 +2371,7 @@ async function scanBandje(bandje_uid) {
 async function haalGastNaamOp(plek_code, lid_uid) {
   const vandaag = new Date().toISOString().slice(0, 10);
   try {
-    const res = await fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/haal-gastnaam', {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/haal-gastnaam`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
       body: JSON.stringify({ plek_code, datum: vandaag }),
@@ -2413,7 +2437,7 @@ function productKnopHTML(p) {
   const saunaGeblokkeerd = p.categorie === 'sauna' && saunaAutomatischActief;
   const geblokkeerd = uitverkocht || saunaGeblokkeerd;
   const id = p.naam.replace(/[^a-zA-Z0-9_-]/g, '');
-  return `<button class="product-btn" data-productnaam="${esc(p.naam)}" ${geblokkeerd ? 'disabled' : ''} onclick="voegToe(this.dataset.productnaam, ${p.prijs})"
+  return `<button class="product-btn" data-productnaam="${esc(p.naam)}" ${geblokkeerd ? 'disabled' : ''} onclick="voegToe(this.dataset.productnaam, ${Number(p.prijs) || 0})"
     style="${geblokkeerd ? 'opacity:0.45;cursor:not-allowed' : ''}">
     ${p.emoji?.startsWith('/icons/') ? `<img src="${esc(p.emoji)}" style="width:2.2rem;height:2.2rem;object-fit:contain">` : `<span class="emoji">${esc(p.emoji) || '🛒'}</span>`}
     <span class="pnaam">${esc(p.naam)}</span>
@@ -3218,7 +3242,7 @@ async function rondAfrekeningLokaalAf(gast, betaaldBedrag) {
   }
 
   if (isOnline && openLog.length > 0) {
-    fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
+    fetch(`${SUPABASE_URL}/functions/v1/stuur-bon`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plek_code: gast.plek, email: gast.email || null, naam: gast.naam, bestellingen: openLog, totaal_bedrag: betaaldBedrag }),
@@ -3252,7 +3276,7 @@ async function afrekenen(uid, wijze) {
 
   if (isOnline && gast.email && openLog.length > 0) {
     const bestellingen = openLog.map(r => ({ tijd: new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}), omschrijving: r.omschrijving||'—', totaal: Number(r.totaal||0) }));
-    fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/stuur-bon', {
+    fetch(`${SUPABASE_URL}/functions/v1/stuur-bon`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ plek_code: gast.plek, email: gast.email, naam: gast.naam, bestellingen, totaal_bedrag: bedrag }),
     }).catch(e => console.warn('Bon na afrekening mislukt:', e));
@@ -3641,21 +3665,21 @@ function renderPlekkenLijst() {
       ? '<span style="color:var(--kr-muted);font-size:0.8rem">Geen bandjes</span>'
       : bandjes.map(uid => `
           <span style="display:inline-flex;align-items:center;gap:4px;background:#f0f0f0;border-radius:4px;padding:2px 6px;margin:2px;font-family:monospace;font-size:0.8rem">
-            ${uid}
-            <button onclick="ontkoppelBandje('${uid}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.9rem;padding:0;line-height:1" title="Ontkoppelen">✕</button>
+            ${esc(uid)}
+            <button onclick="ontkoppelBandje('${jsStr(uid)}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.9rem;padding:0;line-height:1" title="Ontkoppelen">✕</button>
           </span>`).join('');
     return `<div style="border:1px solid #ddd;border-radius:8px;padding:10px 12px;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div>
-          <strong>Plek ${p.plek_code}</strong>
-          <span style="color:var(--kr-muted);font-size:0.85rem;margin-left:8px">${naam}</span>
+          <strong>Plek ${esc(p.plek_code)}</strong>
+          <span style="color:var(--kr-muted);font-size:0.85rem;margin-left:8px">${esc(naam)}</span>
         </div>
-        <button onclick="verwijderPlek('${p.plek_code}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.85rem" title="Plek verwijderen">🗑️ Plek</button>
+        <button onclick="verwijderPlek('${jsStr(p.plek_code)}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.85rem" title="Plek verwijderen">🗑️ Plek</button>
       </div>
       <div style="margin-bottom:6px">${bandjesHtml}</div>
       <div style="display:flex;gap:6px">
         <input id="bandje-voor-plek-${p.plek_code}" placeholder="Bandje UID" style="flex:1;font-size:0.85rem;padding:4px 8px;border:1px solid #ccc;border-radius:4px">
-        <button onclick="voegBandjeAanPlek('${p.plek_code}')" style="font-size:0.85rem;padding:4px 10px;background:var(--kr-forest);color:#fff;border:none;border-radius:4px;cursor:pointer">+ Bandje</button>
+        <button onclick="voegBandjeAanPlek('${jsStr(p.plek_code)}')" style="font-size:0.85rem;padding:4px 10px;background:var(--kr-forest);color:#fff;border:none;border-radius:4px;cursor:pointer">+ Bandje</button>
       </div>
     </div>`;
   }).join('');
@@ -3682,6 +3706,7 @@ async function maakGastenplekAlsNodig(plek_code) {
 async function voegPlekToe() {
   const plek_code = document.getElementById('nieuw-plek-code').value.trim().toUpperCase();
   if (!plek_code) { toonToast('⚠️ Vul een pleknummer in'); return; }
+  if (!/^[A-Z0-9-]{1,12}$/.test(plek_code)) { toonToast('⚠️ Ongeldig pleknummer (alleen letters, cijfers en -)'); return; }
   if (plekkenCache[plek_code]) { toonToast(`⚠️ Plek ${plek_code} bestaat al`); return; }
 
   await maakGastenplekAlsNodig(plek_code);
@@ -3695,6 +3720,7 @@ async function voegBandjeAanPlek(plek_code) {
   const input = document.getElementById(`bandje-voor-plek-${plek_code}`);
   const bandje_uid = input?.value.trim();
   if (!bandje_uid) { toonToast('⚠️ Vul een bandje UID in'); return; }
+  if (!geldigBandjeUid(bandje_uid)) { toonToast('⚠️ Ongeldige bandje-UID (alleen hex, : - of spatie)'); return; }
 
   const bestaand = bandjeNaarKoppeling[bandje_uid];
   if (bestaand) {
@@ -3717,6 +3743,7 @@ async function voegBandjeAanLid(lid_uid) {
   const input = document.getElementById('bandje-voor-lid-input');
   const bandje_uid = input?.value.trim();
   if (!bandje_uid) { toonToast('⚠️ Vul een bandje UID in'); return; }
+  if (!geldigBandjeUid(bandje_uid)) { toonToast('⚠️ Ongeldige bandje-UID (alleen hex, : - of spatie)'); return; }
 
   const bestaand = bandjeNaarKoppeling[bandje_uid];
   if (bestaand) {
@@ -3755,8 +3782,8 @@ function renderBandjesInLidModal(lid_uid) {
     ? '<span style="color:var(--kr-muted);font-size:0.85rem">Geen bandjes gekoppeld</span>'
     : bandjes.map(uid => `
         <span style="display:inline-flex;align-items:center;gap:4px;background:#f0f0f0;border-radius:4px;padding:3px 8px;margin:2px;font-family:monospace;font-size:0.85rem">
-          ${uid}
-          <button onclick="ontkoppelBandjeVanLid('${uid}','${lid_uid}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.9rem;padding:0;line-height:1">✕</button>
+          ${esc(uid)}
+          <button onclick="ontkoppelBandjeVanLid('${jsStr(uid)}','${jsStr(lid_uid)}')" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.9rem;padding:0;line-height:1">✕</button>
         </span>`).join('');
 }
 
@@ -4023,7 +4050,7 @@ async function mailPlekOverzicht(plekCode) {
 
   let boekingen = [];
   try {
-    const res = await fetch('https://qdhnwhgfozdncgioeied.supabase.co/functions/v1/haal-boekingen', {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/haal-boekingen`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
       body: JSON.stringify({ plek_code: plekCode, van: vanParam, tot: totParam }),
@@ -4061,7 +4088,7 @@ async function mailPlekOverzicht(plekCode) {
 }
 
 async function verstuurOverzichtEmail(plekCode, email, naam, perDagArr, van, tot, totaalBedrag, totaalOpen = 0) {
-  const KASSA_URL = 'https://qdhnwhgfozdncgioeied.supabase.co';
+  const KASSA_URL = SUPABASE_URL;
   const KASSA_KEY = SUPABASE_KEY;
   try {
     const res = await fetch(`${KASSA_URL}/functions/v1/stuur-overzicht`, {
