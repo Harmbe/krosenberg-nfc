@@ -6,6 +6,18 @@ betaalmodel van de kassa-app leunt op die policies (`db.js` zet de publieke
 anon-key in de client en doet daarna `supa.from('leden'|'betalingen'|…).upsert`).
 Zonder de policies in git is niet te controleren of dat veilig is.
 
+## Status (2026-08-29)
+
+| Bestand | Toegepast op productie? |
+|---|---|
+| `20260829_01_printer_instellingen_lockdown.sql` | ✅ ja (migratie `printer_instellingen_lockdown`) |
+| `20260829_02_drop_plaintext_pincode.sql` | ✅ ja (migratie `drop_plaintext_pincode`) — Edge Function `stel-pin` v4 vooraf gedeployed zonder `pincode`-referentie |
+| `20260829_03_harden_trigger_search_path.sql` | ✅ ja (migratie `harden_trigger_search_path`) |
+
+`../schema.sql` en `../policies.sql` zijn de gereconstrueerde live-stand ná deze
+migraties. Werk ze bij (of vervang door `supabase db dump`) na elke volgende
+schema- of policy-wijziging.
+
 ## Eenmalig: huidige staat exporteren en committen
 
 Met de Supabase CLI (aanbevolen):

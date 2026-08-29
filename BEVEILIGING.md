@@ -19,16 +19,26 @@ staat.
 | K1a | SQL-migratie om `printer_instellingen` dicht te zetten | `supabase/migrations/20260829_01_*.sql` |
 | K17 | SQL-migratie om de plaintext `pincode`-kolom te droppen | `supabase/migrations/20260829_02_*.sql` |
 
+## Al uitgevoerd tegen productie (2026-08-29, via Supabase MCP)
+
+- ✅ **K1a** — `printer_instellingen` dichtgezet (RLS aan, 0 policies).
+- ✅ **K17** — Edge Function `stel-pin` v4 gedeployed zonder `pincode`-referentie;
+  daarna de plaintext `pincode`-kolom op `leden` geleegd en gedropt.
+  `controleer-pin` gebruikte al alleen `pincode_hash`.
+- ✅ **K1** — `supabase/schema.sql` + `supabase/policies.sql` toegevoegd
+  (gereconstrueerde live-stand); migratie `03` (trigger-`search_path`) toegepast.
+- ✅ Security-linter WARN 0011 opgelost (`update_bijgewerkt_op` vaste search_path).
+
 ## Nog handmatig doen (buiten deze repo)
 
-1. **K1 — RLS + schema exporteren en committen.** Zie `supabase/migrations/README.md`.
-2. **K1a — migratie draaien** (`20260829_01_...sql`) in de Supabase SQL-editor.
-3. **K17 — migratie draaien** (`20260829_02_...sql`) — eerst de Edge Functions
-   `controleer-pin` en `stel-pin` controleren op `pincode`-gebruik.
-4. **Reserveringsapp:** `KASSA_APP_ORIGIN` env-var op het exacte kassa-domein
+1. **Reserveringsapp:** `KASSA_APP_ORIGIN` env-var op het exacte kassa-domein
    zetten in Vercel (R1), daarna deployen. Zonder die env blijft CORS `*`.
-5. **Printserver:** bij een verse install `PRINTSERVER_ALLOWED_ORIGIN` in `.env`
+2. **Printserver:** bij een verse install `PRINTSERVER_ALLOWED_ORIGIN` in `.env`
    op het kassa-domein zetten i.p.v. `*`.
+3. **Supabase Auth** → "Leaked password protection" aanzetten (linter-WARN).
+4. Deze branch (`security-review-2026-08-29`) functioneel testen, pushen, mergen.
+5. Elke tablet één keer opnieuw z'n printer instellen via Beheer → Printer
+   (gevolg van K8 — bestaande tablets houden hun localStorage-waarde).
 
 ## Een tablet intrekken (K13)
 
