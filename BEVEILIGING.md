@@ -4,7 +4,12 @@ Naar aanleiding van de code-review van 2026-08-29. Dit bestand beschrijft de
 doorgevoerde maatregelen, wat er beheersmatig moet gebeuren, en wat er nog open
 staat.
 
-## Doorgevoerd in code (deze commit)
+**Status 2026-08-29:** branch `security-review-2026-08-29` gemerged naar `main`
+in beide repos (kassa PR Harmbe/krosenberg-nfc#1, reserveringen PR
+Harmbe/Krosenberg-reserveringen#1). Beide Vercel-productie-deploys geslaagd;
+`www.re-fective.nl` en `krosenberg-nfc-demo.vercel.app` laden (HTTP 200).
+
+## Doorgevoerd in code (commits 0fde211 + 4d34c42)
 
 | # | Wat | Bestand |
 |---|-----|---------|
@@ -32,13 +37,20 @@ staat.
 ## Nog handmatig doen (buiten deze repo)
 
 1. **Reserveringsapp:** `KASSA_APP_ORIGIN` env-var op het exacte kassa-domein
-   zetten in Vercel (R1), daarna deployen. Zonder die env blijft CORS `*`.
-2. **Printserver:** bij een verse install `PRINTSERVER_ALLOWED_ORIGIN` in `.env`
-   op het kassa-domein zetten i.p.v. `*`.
-3. **Supabase Auth** → "Leaked password protection" aanzetten (linter-WARN).
-4. Deze branch (`security-review-2026-08-29`) functioneel testen, pushen, mergen.
-5. Elke tablet één keer opnieuw z'n printer instellen via Beheer → Printer
-   (gevolg van K8 — bestaande tablets houden hun localStorage-waarde).
+   zetten in Vercel (project `app`) voor Production + Preview, daarna redeployen
+   (R1). Zonder die env blijft CORS `*` (geen functieverlies). Nog niet gezet:
+   wacht op bevestiging welk domein de tablets laden (`krosenberg-nfc-demo.vercel.app`
+   of een alias).
+2. **Printserver (Raspberry Pi):** `PRINTSERVER_ALLOWED_ORIGIN` in het `.env` van
+   de printserver op het kassa-domein zetten i.p.v. `*`, daarna de systemd-service
+   herstarten.
+3. **Supabase Auth** (dashboard `qdhnwhgfozdncgioeied`) → Authentication →
+   "Leaked password protection" aanzetten (linter-WARN).
+4. **Elke kassatablet** één keer opnieuw z'n printer instellen via Beheer →
+   Printer (gevolg van K8 — bestaande tablets houden hun localStorage-waarde,
+   maar nieuwe/gewiste tablets krijgen niks meer via Supabase).
+5. **Kassa-app functioneel testen** in de browser: bandje scannen, bestelling,
+   afrekenen (contant + QR), bon printen, en de K6-melding voor mislukte sync.
 
 ## Een tablet intrekken (K13)
 
