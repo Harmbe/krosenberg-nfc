@@ -197,39 +197,26 @@ async function schrijf(tabel, actie, data) {
   await syncWachtrij();
 }
 
-// Schrijft één consumptie in twee stappen (log-rij + regels). Gebruikt door
-// zowel de directe (online) registratie als de latere wachtrij-verwerking,
-// zodat beide paden identiek gedrag hebben en fouten niet meer stilzwijgend
-// verdwijnen. upsert (i.p.v. insert) op de log-rij en delete-dan-insert op de
-// regels maken een herhaalde poging na een eerdere gedeeltelijke mislukking
-// veilig: geen dubbele log-rij, geen dubbele regels.
-async function schrijfConsumptieOnline(entry) {
+// Alle geldmutaties (consumptie boeken, afrekenen, voorraad aanvullen) lopen
+// sinds de hardening via SECURITY DEFINER-RPC's op Supabase — de tablet heeft
+// geen directe schrijfrechten meer op consumptie_log/betalingen/voorraad_log
+// (zie supabase/migrations/20260829_04). De RPC's zijn idempotent op een
+// client-aangeleverde uuid, dus een retry na een verbroken verbinding boekt
+// nooit dubbel. Lukt de call nu niet, dan gaat 'ie in dezelfde sync-wachtrij
+// als de rest.
+async function _rpcOfWachtrij(rpc, args) {
   try {
-    const { error: logFout } = await supa.from('consumptie_log').upsert({
-      id: entry.id,
-      lid_uid: entry.lid_uid,
-      naam: entry.naam,
-      omschrijving: entry.omschrijving,
-      totaal: entry.totaal,
-      geregistreerd_op: entry.geregistreerd_op,
-    });
-    if (logFout) { console.warn('[consumptie] log-rij opslaan mislukt:', logFout); return false; }
-
-    const regels = (entry.items || []).map(([naam, v]) => ({
-      log_id: entry.id,
-      product_naam: naam,
-      prijs: v.prijs,
-      aantal: v.aantal,
-    }));
-    if (regels.length) {
-      await supa.from('consumptie_regels').delete().eq('log_id', entry.id);
-      const { error: regelsFout } = await supa.from('consumptie_regels').insert(regels);
-      if (regelsFout) { console.warn('[consumptie] regels opslaan mislukt:', regelsFout); return false; }
-    }
-    return true;
+    const { data, error } = await supa.rpc(rpc, args);
+    if (error) throw error;
+    return data || null;
   } catch (e) {
-    console.warn('[consumptie] onverwachte fout bij opslaan:', e);
-    return false;
+    console.warn(`[rpc] ${rpc} nu mislukt — in de wachtrij:`, e?.message || e);
+    await db.sync_queue.add({
+      rpc, args: JSON.stringify(args),
+      aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0,
+    });
+    await updateSyncBadge();
+    return null;
   }
 }
 
@@ -267,41 +254,43 @@ async function _syncWachtrijEenmaal() {
       console.warn('[sync] Item permanent overgeslagen na 5 pogingen:', item);
       continue;
     }
-    let data = JSON.parse(item.data);
-    // Strip velden die niet in het Supabase-schema horen (voorkomt 400-fouten)
-    if (item.tabel === 'producten') {
-      const toegestaan = ['id','naam','prijs','emoji','categorie','omschr','voorraad','laag_waarschuwing','inkoopeenheid','eenheden_per_inkoop','actief','aangemaakt_op','bijgewerkt_op','volgorde'];
-      data = Object.fromEntries(Object.entries(data).filter(([k]) => toegestaan.includes(k)));
-    }
-    // heeft_pincode is een generated column (GENERATED ALWAYS AS ... STORED) —
-    // Postgres weigert elke upsert die daar een waarde voor meestuurt. Het
-    // lokaal gecachete ledenobject bevat dit veld wél (opgehaald om de
-    // pincode-status te tonen), dus moet het er hier altijd uit vóór een
-    // upsert, anders faalt élke saldo-update op leden structureel.
-    if (item.tabel === 'leden') {
-      const { heeft_pincode, pincode, pincode_hash, ...schoon } = data;
-      data = schoon;
-    }
     let ok = false;
     let fout = null;
+    let data = null;
     try {
-      if (item.tabel === 'consumptie_log' && item.actie === 'upsert') {
-        ok = await schrijfConsumptieOnline(data);
-        fout = ok ? null : new Error('Consumptie wegschrijven mislukt (zie eerdere console-waarschuwing)');
-      } else if (item.actie === 'upsert') {
-        const { error } = await supa.from(item.tabel).upsert(data);
+      if (item.rpc) {
+        // Geldmutatie via RPC — idempotent op de client-uuid in args, dus een
+        // herhaalde poging is veilig.
+        const { error } = await supa.rpc(item.rpc, JSON.parse(item.args));
         ok = !error; fout = error;
-      } else if (item.actie === 'delete') {
-        const sleutel = PRIMAIRE_SLEUTEL[item.tabel] || 'id';
-        const { error } = await supa.from(item.tabel).delete().eq(sleutel, data[sleutel]);
-        ok = !error; fout = error;
+      } else {
+        data = JSON.parse(item.data);
+        // Strip velden die niet in het Supabase-schema horen (voorkomt 400-fouten)
+        if (item.tabel === 'producten') {
+          const toegestaan = ['id','naam','prijs','emoji','categorie','omschr','voorraad','laag_waarschuwing','inkoopeenheid','eenheden_per_inkoop','actief','aangemaakt_op','bijgewerkt_op','volgorde'];
+          data = Object.fromEntries(Object.entries(data).filter(([k]) => toegestaan.includes(k)));
+        }
+        // heeft_pincode is generated (nooit meesturen). openstaand is sinds de
+        // hardening een afgeleide, server-beheerde kolom — ook strippen.
+        if (item.tabel === 'leden') {
+          const { heeft_pincode, pincode, pincode_hash, openstaand, ...schoon } = data;
+          data = schoon;
+        }
+        if (item.actie === 'upsert') {
+          const { error } = await supa.from(item.tabel).upsert(data);
+          ok = !error; fout = error;
+        } else if (item.actie === 'delete') {
+          const sleutel = PRIMAIRE_SLEUTEL[item.tabel] || 'id';
+          const { error } = await supa.from(item.tabel).delete().eq(sleutel, data[sleutel]);
+          ok = !error; fout = error;
+        }
       }
     } catch (e) { ok = false; fout = e; }
 
     if (ok) {
       await db.sync_queue.update(item.id, { gesyncroniseerd: 1 });
     } else {
-      console.warn(`[sync] Poging ${pogingen + 1} mislukt voor ${item.tabel}/${item.actie}:`, fout, data);
+      console.warn(`[sync] Poging ${pogingen + 1} mislukt voor ${item.rpc || item.tabel + '/' + item.actie}:`, fout, data || item.args);
       await db.sync_queue.update(item.id, { pogingen: pogingen + 1 });
     }
   }
@@ -345,13 +334,12 @@ async function verzamelMislukteSync() {
   const items = await db.sync_queue.where('gesyncroniseerd').equals(2).toArray();
   return items.map(it => {
     let d = {};
-    try { d = JSON.parse(it.data); } catch {}
+    try { d = JSON.parse(it.data || it.args || '{}'); } catch {}
     return {
       id: it.id,
-      tabel: it.tabel,
-      actie: it.actie,
+      soort: it.rpc || `${it.tabel}/${it.actie}`,
       aangemaakt_op: it.aangemaakt_op,
-      lid_uid: d.lid_uid || d.uid || null,
+      lid_uid: d.p_lid_uid || d.lid_uid || d.uid || null,
       naam: d.naam || null,
       bedrag: d.totaal ?? d.bedrag ?? null,
     };
@@ -389,18 +377,53 @@ async function laadVanSupabase() {
         supa.from('categorie_instellingen').select('*'),
       ]);
 
-    if (leden)     await db.leden.bulkPut(leden);
-    if (producten) await db.producten.bulkPut(producten);
+    if (leden)     { await db.leden.bulkPut(leden);         await reconcileVerwijderingen('leden', leden); }
+    if (producten) { await db.producten.bulkPut(producten); await reconcileVerwijderingen('producten', producten); }
     if (log)       await db.log.bulkPut(log.map(r => ({
       ...r,
       items: (r.consumptie_regels || []).map(x => [x.product_naam, { prijs: x.prijs, aantal: x.aantal }]),
     })));
     if (betalingen) await db.betalingen.bulkPut(betalingen);
-    if (plekken)    await db.plekken.bulkPut(plekken);
-    if (bandjes)    await db.bandjes.bulkPut(bandjes);
+    if (plekken)    { await db.plekken.bulkPut(plekken);   await reconcileVerwijderingen('plekken', plekken); }
+    if (bandjes)    { await db.bandjes.bulkPut(bandjes);   await reconcileVerwijderingen('bandjes', bandjes); }
     if (voorraadLog) await db.voorraad_log.bulkPut(voorraadLog);
     if (categorieInstellingen) await db.categorie_instellingen.bulkPut(categorieInstellingen);
   } catch (e) { console.warn('Supabase laden mislukt, gebruik lokale data', e); }
+}
+
+// bulkPut voegt alleen toe/werkt bij — een rij die op een ander toestel is
+// verwijderd (bandje ontkoppeld, plek/lid/artikel weg) bleef zo lokaal staan
+// en scanbaar; latere transacties daarop faalden dan op een foreign key en
+// belandden na 5 pogingen definitief in de foutwachtrij. Hier lokaal wissen
+// wat de server niet meer kent — maar alleen:
+//   * als de server-fetch écht gelukt is (serverRijen is een array), nooit bij
+//     een lege/mislukte respons;
+//   * niet bij een sleutel die nog een openstaand sync_queue-item heeft (die
+//     rij is lokaal aangemaakt en moet nog omhoog, staat dus terecht nog niet
+//     op de server);
+//   * niet als de server exact de PostgREST-maxrijen (1000) teruggaf — dan is
+//     de lijst mogelijk afgekapt en zou reconciliatie te veel wissen.
+async function reconcileVerwijderingen(tabel, serverRijen) {
+  if (!Array.isArray(serverRijen) || serverRijen.length >= 1000) return;
+  const sleutel = PRIMAIRE_SLEUTEL[tabel] || 'id';
+  const serverSleutels = new Set(serverRijen.map(r => r[sleutel]));
+
+  const wachtrij = await db.sync_queue.where('gesyncroniseerd').equals(0).toArray();
+  const wachtendeSleutels = new Set(
+    wachtrij
+      .filter(it => it.tabel === tabel)
+      .map(it => { try { return JSON.parse(it.data)[sleutel]; } catch { return null; } })
+  );
+
+  const lokaal = await db[tabel].toArray();
+  const teVerwijderen = lokaal
+    .map(r => r[sleutel])
+    .filter(k => k != null && !serverSleutels.has(k) && !wachtendeSleutels.has(k));
+
+  if (teVerwijderen.length) {
+    await db[tabel].bulkDelete(teVerwijderen);
+    console.info(`[sync] ${teVerwijderen.length} lokale ${tabel}-rij(en) verwijderd — elders van de server verwijderd`);
+  }
 }
 
 // ── Data-toegang (altijd via IndexedDB) ───────────────────────────────────────
@@ -479,26 +502,58 @@ const DB = {
     await schrijf('producten', 'delete', { id });
   },
 
+  // Boekt één bestelling via de RPC. `entry`: { lid_uid, naam, omschrijving,
+  // items:[[naam,{prijs,aantal}]], totaal, rpcItems:[{product_id,aantal}] }.
+  // Schrijft lokaal een log-rij (voor de weergave) en stuurt de RPC; bij een
+  // fout gaat 'ie in de wachtrij. Geeft het RPC-resultaat terug ({openstaand,
+  // totaal, ...}) of null bij offline.
   async voegLogToe(entry) {
     entry.id = crypto.randomUUID();
     entry.geregistreerd_op = new Date().toISOString();
     await db.log.put(entry);
-    // Altijd proberen, ongeacht isOnline — zie toelichting bij schrijf().
-    const gelukt = await schrijfConsumptieOnline(entry);
-    if (!gelukt) {
-      await db.sync_queue.add({ tabel: 'consumptie_log', actie: 'upsert', data: JSON.stringify(entry), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
-    }
+    return _rpcOfWachtrij('kassa_boek_consumptie', {
+      p_log_id: entry.id,
+      p_lid_uid: entry.lid_uid,
+      p_items: entry.rpcItems || [],
+      p_op: entry.geregistreerd_op,
+    });
   },
 
-  async voegBetalingToe(betaling) {
-    betaling.id = crypto.randomUUID();
-    betaling.betaald_op = new Date().toISOString();
-    await schrijf('betalingen', 'upsert', betaling);
+  // Rekent de openstaande tab van één account af. Het BEDRAG bepaalt de server
+  // (loopsaldo) — `betaling` levert alleen { lid_uid, naam, plek, wijze }.
+  // Geeft het RPC-resultaat terug ({ bedrag, openstaand }) of null bij offline.
+  async rekenAf(betaling) {
+    const id = crypto.randomUUID();
+    const res = await _rpcOfWachtrij('kassa_reken_af', {
+      p_betaling_id: id,
+      p_lid_uid: betaling.lid_uid,
+      p_wijze: betaling.wijze || 'contant',
+    });
+    await db.betalingen.put({
+      id, lid_uid: betaling.lid_uid, naam: betaling.naam, plek: betaling.plek,
+      bedrag: res?.bedrag ?? betaling.schatting ?? 0,
+      wijze: betaling.wijze || 'contant', betaald_op: new Date().toISOString(),
+    });
+    return res;
   },
 
-  async voegVoorraadLogToe(entry) {
-    entry.id = crypto.randomUUID();
-    entry.aangemaakt_op = new Date().toISOString();
-    await schrijf('voorraad_log', 'upsert', entry);
+  // Voorraad aanvullen via de RPC. `entry`: { product_id, product_naam, aantal,
+  // door, inkoop_aantal?, inkoop_eenheid?, schattingVoorraad? }.
+  async vulVoorraad(entry) {
+    const id = crypto.randomUUID();
+    const res = await _rpcOfWachtrij('kassa_vul_voorraad_aan', {
+      p_log_id: id,
+      p_product_id: entry.product_id,
+      p_aantal: entry.aantal,
+      p_door: entry.door || null,
+    });
+    await db.voorraad_log.put({
+      id, product_id: entry.product_id, product_naam: entry.product_naam,
+      aantal: entry.aantal, nieuwe_voorraad: res?.nieuwe_voorraad ?? entry.schattingVoorraad ?? 0,
+      door: entry.door || null,
+      inkoop_aantal: entry.inkoop_aantal ?? null, inkoop_eenheid: entry.inkoop_eenheid ?? null,
+      aangemaakt_op: new Date().toISOString(),
+    });
+    return res;
   },
 };
