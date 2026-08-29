@@ -8,6 +8,8 @@ staat.
 in beide repos (kassa PR Harmbe/krosenberg-nfc#1, reserveringen PR
 Harmbe/Krosenberg-reserveringen#1). Beide Vercel-productie-deploys geslaagd;
 `www.re-fective.nl` en `krosenberg-nfc-demo.vercel.app` laden (HTTP 200).
+`KASSA_APP_ORIGIN` gezet + reserveringen geredeployed (R1 afgerond). Rest van
+de handmatige stappen hieronder staat nog open.
 
 ## Doorgevoerd in code (commits 0fde211 + 4d34c42)
 
@@ -36,11 +38,13 @@ Harmbe/Krosenberg-reserveringen#1). Beide Vercel-productie-deploys geslaagd;
 
 ## Nog handmatig doen (buiten deze repo)
 
-1. **Reserveringsapp:** `KASSA_APP_ORIGIN` env-var op het exacte kassa-domein
-   zetten in Vercel (project `app`) voor Production + Preview, daarna redeployen
-   (R1). Zonder die env blijft CORS `*` (geen functieverlies). Nog niet gezet:
-   wacht op bevestiging welk domein de tablets laden (`krosenberg-nfc-demo.vercel.app`
-   of een alias).
+1. ~~**Reserveringsapp:** `KASSA_APP_ORIGIN` env-var zetten (R1).~~ ✅ Gedaan
+   2026-08-29 — `KASSA_APP_ORIGIN=https://krosenberg-nfc-demo.vercel.app` op
+   project `app` (Production + Preview), reserveringen geredeployed.
+   Geverifieerd: `/api/kassa/*` geeft nu `Access-Control-Allow-Origin:
+   https://krosenberg-nfc-demo.vercel.app` i.p.v. `*`. **Let op:** de tablets
+   moeten de kassa-PWA op exact dit domein laden — een andere Vercel-alias
+   (`…-harmb.vercel.app`) matcht niet meer.
 2. **Printserver (Raspberry Pi):** `PRINTSERVER_ALLOWED_ORIGIN` in het `.env` van
    de printserver op het kassa-domein zetten i.p.v. `*`, daarna de systemd-service
    herstarten.
