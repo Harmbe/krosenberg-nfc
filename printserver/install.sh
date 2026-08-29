@@ -24,6 +24,12 @@ echo "Printerrechten ingesteld voor gebruiker: $USER"
 ENV_FILE="$(pwd)/.env"
 if [ ! -f "$ENV_FILE" ]; then
   echo "PRINTSERVER_SLEUTEL=$(openssl rand -hex 24)" > "$ENV_FILE"
+  # CORS beperken tot de kassa-app. Pas dit aan naar het exacte kassa-domein
+  # (bv. https://kassa.krosenberg.nl). Laat je het op * staan, dan mag elke
+  # website in de browser van iemand op hetzelfde wifi de printserver
+  # aanspreken — de sleutel blijft de eigenlijke toegangscontrole, maar
+  # afschermen is beter (denk aan /open-kassa dat de kassalade opent).
+  echo "PRINTSERVER_ALLOWED_ORIGIN=*" >> "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 fi
 PRINTSERVER_SLEUTEL="$(grep '^PRINTSERVER_SLEUTEL=' "$ENV_FILE" | cut -d= -f2)"
@@ -62,7 +68,9 @@ echo "Controleer status:  sudo systemctl status krosenberg-print"
 echo "Logs bekijken:      sudo journalctl -u krosenberg-print -f"
 echo ""
 echo "Vul dit IP-adres in bij Beheer > Printer instellen in de tablet-app."
-echo "Vul ook deze printserver-sleutel in bij hetzelfde scherm (op elke tablet):"
+echo "Doe dit op ELKE tablet los: printer-URL en -sleutel worden bewust niet"
+echo "meer via Supabase gesynchroniseerd (de sleutel opent ook de kassalade)."
+echo "Vul deze printserver-sleutel in bij hetzelfde scherm (op elke tablet):"
 echo ""
 echo "  $PRINTSERVER_SLEUTEL"
 echo ""
