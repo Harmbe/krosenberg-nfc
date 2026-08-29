@@ -45,13 +45,14 @@ de handmatige stappen hieronder staat nog open.
    https://krosenberg-nfc-demo.vercel.app` i.p.v. `*`. **Let op:** de tablets
    moeten de kassa-PWA op exact dit domein laden — een andere Vercel-alias
    (`…-harmb.vercel.app`) matcht niet meer.
-2. **Printserver (Raspberry Pi):** in `printserver/.env` op de Pi (pad:
-   `systemctl cat krosenberg-print | grep EnvironmentFile`) de regel
-   `PRINTSERVER_ALLOWED_ORIGIN=*` wijzigen naar
-   `PRINTSERVER_ALLOWED_ORIGIN=https://krosenberg-nfc-demo.vercel.app`, daarna
-   `sudo systemctl restart krosenberg-print`. De systemd-service heet
-   `krosenberg-print` (zie `printserver/install.sh`); `PRINTSERVER_SLEUTEL`
-   staat in datzelfde bestand en blijft staan.
+2. ~~**Printserver (Raspberry Pi):** `PRINTSERVER_ALLOWED_ORIGIN` zetten.~~
+   ✅ Gedaan 2026-08-29. Pad `/home/krosenberg_beheer/printserver/.env`
+   (stond nog niet ingevuld — nu toegevoegd:
+   `PRINTSERVER_ALLOWED_ORIGIN=https://krosenberg-nfc-demo.vercel.app`).
+   Service `krosenberg-print` herstart, `active (running)`. Backup
+   `.env.bak-2026-08-29`. **Let op:** de tablets moeten de PWA op exact dit
+   domein laden, anders blokkeert de browser het printen op CORS — bij een
+   ander/nieuw domein die origin hier toevoegen.
 3. **Supabase Auth** (dashboard `qdhnwhgfozdncgioeied`) → Authentication →
    "Leaked password protection" aanzetten (linter-WARN).
 4. **Elke kassatablet** één keer opnieuw z'n printer instellen via Beheer →
