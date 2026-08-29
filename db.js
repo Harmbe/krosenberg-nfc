@@ -389,18 +389,53 @@ async function laadVanSupabase() {
         supa.from('categorie_instellingen').select('*'),
       ]);
 
-    if (leden)     await db.leden.bulkPut(leden);
-    if (producten) await db.producten.bulkPut(producten);
+    if (leden)     { await db.leden.bulkPut(leden);         await reconcileVerwijderingen('leden', leden); }
+    if (producten) { await db.producten.bulkPut(producten); await reconcileVerwijderingen('producten', producten); }
     if (log)       await db.log.bulkPut(log.map(r => ({
       ...r,
       items: (r.consumptie_regels || []).map(x => [x.product_naam, { prijs: x.prijs, aantal: x.aantal }]),
     })));
     if (betalingen) await db.betalingen.bulkPut(betalingen);
-    if (plekken)    await db.plekken.bulkPut(plekken);
-    if (bandjes)    await db.bandjes.bulkPut(bandjes);
+    if (plekken)    { await db.plekken.bulkPut(plekken);   await reconcileVerwijderingen('plekken', plekken); }
+    if (bandjes)    { await db.bandjes.bulkPut(bandjes);   await reconcileVerwijderingen('bandjes', bandjes); }
     if (voorraadLog) await db.voorraad_log.bulkPut(voorraadLog);
     if (categorieInstellingen) await db.categorie_instellingen.bulkPut(categorieInstellingen);
   } catch (e) { console.warn('Supabase laden mislukt, gebruik lokale data', e); }
+}
+
+// bulkPut voegt alleen toe/werkt bij — een rij die op een ander toestel is
+// verwijderd (bandje ontkoppeld, plek/lid/artikel weg) bleef zo lokaal staan
+// en scanbaar; latere transacties daarop faalden dan op een foreign key en
+// belandden na 5 pogingen definitief in de foutwachtrij. Hier lokaal wissen
+// wat de server niet meer kent — maar alleen:
+//   * als de server-fetch écht gelukt is (serverRijen is een array), nooit bij
+//     een lege/mislukte respons;
+//   * niet bij een sleutel die nog een openstaand sync_queue-item heeft (die
+//     rij is lokaal aangemaakt en moet nog omhoog, staat dus terecht nog niet
+//     op de server);
+//   * niet als de server exact de PostgREST-maxrijen (1000) teruggaf — dan is
+//     de lijst mogelijk afgekapt en zou reconciliatie te veel wissen.
+async function reconcileVerwijderingen(tabel, serverRijen) {
+  if (!Array.isArray(serverRijen) || serverRijen.length >= 1000) return;
+  const sleutel = PRIMAIRE_SLEUTEL[tabel] || 'id';
+  const serverSleutels = new Set(serverRijen.map(r => r[sleutel]));
+
+  const wachtrij = await db.sync_queue.where('gesyncroniseerd').equals(0).toArray();
+  const wachtendeSleutels = new Set(
+    wachtrij
+      .filter(it => it.tabel === tabel)
+      .map(it => { try { return JSON.parse(it.data)[sleutel]; } catch { return null; } })
+  );
+
+  const lokaal = await db[tabel].toArray();
+  const teVerwijderen = lokaal
+    .map(r => r[sleutel])
+    .filter(k => k != null && !serverSleutels.has(k) && !wachtendeSleutels.has(k));
+
+  if (teVerwijderen.length) {
+    await db[tabel].bulkDelete(teVerwijderen);
+    console.info(`[sync] ${teVerwijderen.length} lokale ${tabel}-rij(en) verwijderd — elders van de server verwijderd`);
+  }
 }
 
 // ── Data-toegang (altijd via IndexedDB) ───────────────────────────────────────
