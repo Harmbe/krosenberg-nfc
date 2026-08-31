@@ -1572,7 +1572,7 @@ function esc(s) {
 // HTML-parser decodeert &#39; terug naar ' vóór de JS-parser de handler
 // compileert, waarna een geprepareerde waarde (bv. een NFC-bandje-uid of een
 // artikelcategorie met leestekens) alsnog kan uitbreken. Backslash en quote
-// escapen, en < neutraliseren tegen een </script>-breakout.
+// escapen, en < neutraliseren tegen een <\/script>-breakout.
 function jsStr(s) {
   return String(s ?? '')
     .replace(/\\/g, '\\\\')
