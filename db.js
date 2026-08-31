@@ -365,7 +365,7 @@ async function laadVanSupabase() {
     // was via de publieke anon-key uit te lezen én te overschrijven (bonnen
     // omleiden). Bijkomend voordeel: elke tablet/locatie kan nu een eigen
     // printer hebben.
-    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }, { data: categorieInstellingen }] =
+    const [{ data: leden }, { data: producten }, { data: log }, { data: betalingen }, { data: plekken }, { data: bandjes }, { data: voorraadLog }, { data: categorieInstellingen }, { data: meta }] =
       await Promise.all([
         supa.from('leden').select(LEDEN_KOLOMMEN),
         supa.from('producten').select('*'),
@@ -375,7 +375,20 @@ async function laadVanSupabase() {
         supa.from('bandjes').select('*'),
         supa.from('voorraad_log').select('*'),
         supa.from('categorie_instellingen').select('*'),
+        supa.from('kassa_meta').select('*'),
       ]);
+
+    // "Schone lijst": is er server-side een reset geweest ná wat deze tablet
+    // laatst zag, maak dan de lokale transactiecache leeg vóór het herladen —
+    // anders blijven oude bestellingen hier zichtbaar (bulkPut voegt alleen toe).
+    const resetStamp = (meta || []).find(m => m.sleutel === 'laatste_reset')?.waarde;
+    if (resetStamp && resetStamp !== localStorage.getItem('kr_laatste_reset')) {
+      await db.log.clear();
+      await db.betalingen.clear();
+      await db.voorraad_log.clear();
+      localStorage.setItem('kr_laatste_reset', resetStamp);
+      console.info('[reset] lokale transactiecache geleegd (server-reset', resetStamp + ')');
+    }
 
     if (leden)     { await db.leden.bulkPut(leden);         await reconcileVerwijderingen('leden', leden); }
     if (producten) { await db.producten.bulkPut(producten); await reconcileVerwijderingen('producten', producten); }
@@ -555,5 +568,32 @@ const DB = {
       aangemaakt_op: new Date().toISOString(),
     });
     return res;
+  },
+
+  // "Schone lijst": wist server-side ALLE bestellingen + betalingen en zet alle
+  // saldi op 0 (na de testperiode, of bij seizoensstart nadat alle rekeningen
+  // voldaan zijn). Maakt eerst een back-up in schema kassa_backup. De server
+  // markeert de reset zodat elke andere tablet bij de eerstvolgende sync ook
+  // z'n lokale cache leegt. Geeft {backup, verwijderd:{...}} terug.
+  async resetTransacties({ ookVoorraad = false } = {}) {
+    const { data, error } = await supa.rpc('kassa_reset_transacties', {
+      p_bevestiging: 'RESET',
+      p_ook_voorraad: !!ookVoorraad,
+    });
+    if (error) throw error;
+    // Meteen lokaal opruimen op dit toestel (de andere volgen via kassa_meta).
+    await db.log.clear();
+    await db.betalingen.clear();
+    if (ookVoorraad) await db.voorraad_log.clear();
+    // Alleen de transactie-wachtrij-items wissen — pendende stamdata-wijzigingen
+    // (lid/artikel/plek/bandje) blijven staan.
+    const wachtrij = await db.sync_queue.toArray();
+    const teWissen = wachtrij.filter(it =>
+      it.rpc === 'kassa_boek_consumptie' || it.rpc === 'kassa_reken_af' ||
+      it.tabel === 'consumptie_log' || it.tabel === 'betalingen' ||
+      (ookVoorraad && (it.rpc === 'kassa_vul_voorraad_aan' || it.tabel === 'voorraad_log'))
+    ).map(it => it.id);
+    if (teWissen.length) await db.sync_queue.bulkDelete(teWissen);
+    return data;
   },
 };

@@ -154,3 +154,8 @@ create trigger producten_bijgewerkt before update on public.producten
 -- Triggers : consumptie_log_openstaand, betalingen_openstaand (after row)
 --            leden_openstaand_afgeleid (before row)
 -- De volledige definities staan in migrations/20260829_04_kassa_schrijflaag.sql.
+
+-- ── "schone lijst" (zie migrations/20260831_06) ───────────────────────────
+-- Tabel   : kassa_meta (sleutel/waarde — o.a. 'laatste_reset')
+-- Functie : kassa_reset_transacties(text, boolean) — wist alle transacties,
+--           saldi → 0, met back-up in schema kassa_backup.
