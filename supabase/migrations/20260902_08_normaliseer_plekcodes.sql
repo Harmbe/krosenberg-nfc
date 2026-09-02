@@ -7,7 +7,21 @@
 -- Eén canonieke notatie afdwingen: upper(), spaties eruit. De tombstone-waarde
 -- "~vertrokken-<plek>" (leden.plek van een vertrokken lid) blijft ongemoeid.
 --
--- Nog toe te passen op DB qdhnwhgfozdncgioeied.
+-- Toegepast op DB qdhnwhgfozdncgioeied op 2026-09-03 (via Supabase MCP
+-- apply_migration, naam "normaliseer_plekcodes" in de migratielog).
+-- Bij toepassing was alleen "GV 1" nog niet-canoniek (in leden + plekken).
+--
+-- LET OP — de not-exists-guards hierboven laten een dubbele rij staan als de
+-- canonieke code al als aparte rij bestaat. Dat was het geval voor "GV 1":
+-- naast "GV 1" bestond al "GV1" (plek + placeholder-gastaccount PLEK-GV1).
+-- De "GV 1"-rijen (plek + account PLEK-GV 1) waren lege placeholders (naam "—",
+-- saldo 0, geen bandje/consumptie/betaling) en zijn daarom handmatig verwijderd:
+--   delete from public.leden   where uid = 'PLEK-GV 1';
+--   delete from public.plekken where plek_code = 'GV 1';
+-- Na afloop: GV-plekken = GV1..GV6, geen spaties/kleine letters meer.
+-- Controle achteraf uitgevoerd: kassa_boek_consumptie + kassa_reken_af werken,
+-- leden.openstaand wordt via de triggers nog correct bijgewerkt.
+--
 -- Controle vooraf: select plek from public.leden where plek <> upper(regexp_replace(plek,'\s+','','g')) and plek !~ '^~';
 
 -- helper: canonieke schrijfwijze

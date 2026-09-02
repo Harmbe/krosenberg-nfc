@@ -8,8 +8,15 @@
 -- met de service-role-sleutel aanroept. Geen enkele tablet kan de functie nog
 -- rechtstreeks aanroepen.
 --
--- Nog toe te passen op DB qdhnwhgfozdncgioeied.
+-- Toegepast op DB qdhnwhgfozdncgioeied op 2026-09-03 (via Supabase MCP
+-- apply_migration, naam "kassa_reset_alleen_service_role" in de migratielog).
 -- Controle: select proacl from pg_proc where proname = 'kassa_reset_transacties';
---   → geen `authenticated=X`, wel `service_role=X`.
+--   ná: {postgres=X/postgres, service_role=X/postgres} — geen `authenticated=X`.
+--
+-- LET OP: zolang de kassa-app "schone lijst" nog direct `supa.rpc(
+-- 'kassa_reset_transacties')` aanroept, werkt die knop niet meer. De
+-- reserveringen-route /api/kassa/reset (achter beheer-auth) + de aanpassing in
+-- krosenberg-nfc-demo moeten nog gebouwd worden (fix-prompt Blok B3). Nu geen
+-- impact: de kassa is niet in bedrijf en heeft 0 transacties.
 
 revoke execute on function public.kassa_reset_transacties(text, boolean) from authenticated;

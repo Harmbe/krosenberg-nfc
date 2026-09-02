@@ -13,7 +13,10 @@
 -- Verder identiek aan de definitie in migratie 04. CREATE OR REPLACE behoudt
 -- de bestaande EXECUTE-rechten (anon ingetrokken in migratie 05).
 --
--- Nog toe te passen op DB qdhnwhgfozdncgioeied.
+-- Toegepast op DB qdhnwhgfozdncgioeied op 2026-09-03 (via Supabase MCP
+-- apply_migration, naam "kassa_reken_af_row_lock" in de migratielog).
+-- Geverifieerd: pg_get_functiondef bevat "for update"; consumptie boeken →
+-- kassa_reken_af → openstaand 0 + betalingsrij, daarna opgeruimd.
 
 create or replace function public.kassa_reken_af(
   p_betaling_id uuid,
