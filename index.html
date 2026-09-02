@@ -4272,14 +4272,36 @@ async function verstuurOverzichtEmail(plekCode, email, naam, perDagArr, van, tot
     Apparaat activeren
   </button>
   <div id="setup-fout" style="color:#ff8a80;font-size:.85rem;min-height:1.2em;text-align:center"></div>
-  <div id="setup-diagnose" style="color:var(--kr-leem);opacity:.6;font-size:.72rem;text-align:center;max-width:320px"></div>
+  <div id="setup-melding" style="color:var(--kr-sand);font-size:.85rem;text-align:center;max-width:320px"></div>
+  <button type="button" id="setup-diagnose-toggle" onclick="wisselSetupDiagnose()"
+    style="display:none;background:none;border:none;color:var(--kr-leem);opacity:.55;font-size:.72rem;text-decoration:underline;cursor:pointer">Technische details</button>
+  <div id="setup-diagnose" style="display:none;color:var(--kr-leem);opacity:.6;font-size:.72rem;text-align:center;max-width:320px;white-space:pre-wrap"></div>
 </div>
 
 <script>
-function toonSetupScherm(diagnose) {
+// melding  = korte, leesbare tekst voor de gebruiker (mag leeg)
+// technisch = diagnose-string; NOOIT direct tonen (F31) — alleen achter de
+//             "Technische details"-toggle en in de console.
+function toonSetupScherm(melding, technisch) {
   document.getElementById('setup-overlay').style.display = 'flex';
+  const mel = document.getElementById('setup-melding');
+  if (mel) mel.textContent = melding || '';
   const el = document.getElementById('setup-diagnose');
-  if (el) el.textContent = diagnose || '';
+  const toggle = document.getElementById('setup-diagnose-toggle');
+  if (technisch) console.debug('[setup] diagnose:', technisch);
+  if (el) { el.textContent = technisch || ''; el.style.display = 'none'; }
+  if (toggle) {
+    toggle.style.display = technisch ? '' : 'none';
+    toggle.textContent = 'Technische details';
+  }
+}
+
+function wisselSetupDiagnose() {
+  const el = document.getElementById('setup-diagnose');
+  const toggle = document.getElementById('setup-diagnose-toggle');
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if (toggle) toggle.textContent = open ? 'Technische details' : 'Verberg details';
 }
 
 async function voerSetupUit() {

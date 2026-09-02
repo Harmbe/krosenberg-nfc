@@ -120,7 +120,9 @@ async function initSessie() {
 
   if (session) return true;
   console.warn('[initSessie] geen geldige sessie:', diagnose);
-  if (typeof toonSetupScherm === 'function') toonSetupScherm(diagnose);
+  // Diagnose alleen als technische detail meegeven — niet als zichtbare tekst
+  // (F31). Het setup-scherm heeft al een vaste uitleg.
+  if (typeof toonSetupScherm === 'function') toonSetupScherm(null, diagnose);
   return false;
 }
 
