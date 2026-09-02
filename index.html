@@ -2073,7 +2073,7 @@ function sluitBewerkLid() {
 async function slaLidwijzigingOp() {
   const uid = bewerkUid;
   const naam = document.getElementById('bewerk-naam').value.trim();
-  const plek = document.getElementById('bewerk-plek').value.trim().toUpperCase();
+  const plek = normPlek(document.getElementById('bewerk-plek').value);
   const type = document.getElementById('bewerk-type').value;
   const nieuwePincode = document.getElementById('bewerk-pincode').value.trim();
   // Nooit beheerder=true voor type 'gast', ongeacht UI-status — het kassa-uid
@@ -2183,8 +2183,8 @@ function sluitZelfInvoer() {
 }
 
 function zelfSelecteer() {
-  const plek = _zelfPlek.trim().toUpperCase();
-  const gevonden = Object.entries(gasten).find(([, g]) => g.plek.toUpperCase() === plek);
+  const plek = normPlek(_zelfPlek);
+  const gevonden = Object.entries(gasten).find(([, g]) => normPlek(g.plek) === plek);
   if (!gevonden) {
     document.getElementById('zelf-fout').textContent = `Pleknummer "${plek}" niet gevonden`;
     return;

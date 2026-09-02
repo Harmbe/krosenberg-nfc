@@ -147,6 +147,13 @@ async function activeerApparaat(sleutel) {
 // verkeerde kolomnaam laat een delete stilzwijgend niets raken.
 const PRIMAIRE_SLEUTEL = { leden: 'uid', plekken: 'plek_code', bandjes: 'bandje_uid', producten: 'id' };
 
+// Canonieke schrijfwijze van een plekcode: hoofdletters, geen spaties
+// ("gv 1" → "GV1"). De reserveringen-app gebruikt deze notatie; hier ook
+// aanhouden zodat de kantine-saldo-koppeling matcht (F16).
+function normPlek(s) {
+  return String(s || '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
 // ── Online status ──────────────────────────────────────────────────────────────
 let isOnline = navigator.onLine;
 window.addEventListener('online',  () => { isOnline = true;  updateStatusBadge(); syncWachtrij(); });
