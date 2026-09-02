@@ -1683,6 +1683,9 @@ setInterval(() => { if (navigator.onLine) laadMinimumPinbedrag(); }, 60000);
  *  pleknummer via "+ Plek". Best-effort, zelfde patroon als
  *  laadSaunaInstelling(): faalt stil als de reserveringen-app onbereikbaar is. */
 async function syncGastenplekkenVanReserveringen() {
+  // Maakt lokaal + via de wachtrij gastenplek-rijen aan — niet doen op een
+  // apparaat dat nog niet is geactiveerd (F42): die rijen kunnen nergens heen.
+  if (typeof _apparaatOoitGeactiveerd === 'function' && !_apparaatOoitGeactiveerd()) return;
   try {
     const res = await fetch(`${RESERVERINGEN_API_URL}/api/kassa/gastenplekken`, { cache: 'no-store' });
     if (!res.ok) return;
@@ -3459,7 +3462,7 @@ async function verschuifArtikel(i, richting) {
   await renderArtikelLijst();
   // Volledige records via sync-wachtrij naar Supabase (met retry)
   for (const p of producten) {
-    await db.sync_queue.add({ tabel: 'producten', actie: 'upsert', data: JSON.stringify(p), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
+    await _wachtrijToevoegen({ tabel: 'producten', actie: 'upsert', data: JSON.stringify(p), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 });
   }
   if (isOnline) syncWachtrij();
 }

@@ -131,6 +131,7 @@ module.exports = async function ({ state, resetState, leegDb, ok, eq }) {
     await verse();
     state.session = null;
     state.acceptRefresh = false;
+    state.acceptSetSession = false; // backup-token in localStorage werkt ook niet meer
     await g.db.sync_queue.add({ rpc: 'kassa_boek_consumptie', args: JSON.stringify({ p_log_id: 'L1', p_lid_uid: 'U', p_items: [] }), aangemaakt_op: iso(0), gesyncroniseerd: 0 });
     state.rpc.kassa_boek_consumptie = () => ({ ok: true });
 
@@ -280,5 +281,20 @@ module.exports = async function ({ state, resetState, leegDb, ok, eq }) {
     const na = (await g.db.sync_queue.toArray())[0];
     ok(na.gesyncroniseerd === 0 || na.gesyncroniseerd === 2, 'item opnieuw geprobeerd');
     eq(na.auto_herprobeerd, na.gesyncroniseerd === 2 ? 1 : 0, 'auto_herprobeerd gereset bij handmatige herpoging');
+  }
+
+  // ── F42: niet-geactiveerd apparaat genereert geen schrijf-syncs ───────────
+  console.log('\nF42 — niet-geactiveerd apparaat');
+  {
+    await verse();
+    g.__ls.delete('kr_kassa_tokens'); // nooit geactiveerd
+    await g.schrijf('leden', 'upsert', { uid: 'U9', naam: 'Test', plek: 'GV1' });
+    eq(await g.db.sync_queue.count(), 0, 'geen wachtrij-item zonder activatie');
+    eq((await g.db.leden.toArray()).length, 1, 'lokale IndexedDB-schrijf gebeurt wél (UI blijft werken)');
+
+    // ná activatie mag het weer
+    g.__ls.set('kr_kassa_tokens', JSON.stringify({ access_token: 'x', refresh_token: 'y' }));
+    await g.schrijf('leden', 'upsert', { uid: 'U10', naam: 'Test2', plek: 'GV2' });
+    ok(await g.db.sync_queue.count() >= 1, 'na activatie wél in de wachtrij');
   }
 };

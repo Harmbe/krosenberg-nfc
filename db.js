@@ -78,6 +78,22 @@ const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // ── Apparaat-sessie ────────────────────────────────────────────────────────────
 const _SESSIE_SLEUTEL = 'kr_kassa_tokens';
 
+// Een apparaat dat nog nooit is geactiveerd (geen backup-token) hoort geen
+// schrijf-syncs te produceren (F42): die kunnen nergens heen en vullen de
+// wachtrij, wat als "N NIET gesynchroniseerd — waarschuw beheer" in beeld
+// blijft staan. Lokale IndexedDB-schrijfacties voor de UI blijven wél werken.
+function _apparaatOoitGeactiveerd() {
+  try { return !!localStorage.getItem(_SESSIE_SLEUTEL); } catch { return false; }
+}
+async function _wachtrijToevoegen(item) {
+  if (!_apparaatOoitGeactiveerd()) {
+    console.debug('[sync] niet in de wachtrij — apparaat nog niet geactiveerd:', item.rpc || `${item.tabel}/${item.actie}`);
+    return false;
+  }
+  await db.sync_queue.add(item);
+  return true;
+}
+
 // Houd backup-tokens actueel zodra Supabase de access token automatisch ververst.
 supa.auth.onAuthStateChange((event, session) => {
   if (session) {
@@ -189,7 +205,7 @@ async function schrijf(tabel, actie, data) {
   if (actie === 'delete') await db[tabel].delete(data.id || data.uid);
 
   // 2. In sync-wachtrij zetten
-  await db.sync_queue.add({
+  await _wachtrijToevoegen({
     tabel,
     actie,
     data: JSON.stringify(data),
@@ -224,7 +240,7 @@ async function _rpcOfWachtrij(rpc, args) {
     // permission denied), probeer die dan op de achtergrond te herstellen zodat
     // de wachtrij-verwerking straks wél door de RLS/EXECUTE-check komt.
     if (_isAuthFout(e)) _herstelSessie('rpc-call');
-    await db.sync_queue.add({
+    await _wachtrijToevoegen({
       rpc, args: JSON.stringify(args),
       aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0,
     });
@@ -688,7 +704,7 @@ const DB = {
       const { error } = await supa.from('plekken').upsert(plek);
       if (error) throw error;
     }
-    catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
+    catch { await _wachtrijToevoegen({ tabel: 'plekken', actie: 'upsert', data: JSON.stringify(plek), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
   },
   async verwijderPlek(plek_code) {
     await db.plekken.delete(plek_code);
@@ -696,7 +712,7 @@ const DB = {
       const { error } = await supa.from('plekken').delete().eq('plek_code', plek_code);
       if (error) throw error;
     }
-    catch { await db.sync_queue.add({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
+    catch { await _wachtrijToevoegen({ tabel: 'plekken', actie: 'delete', data: JSON.stringify({ plek_code }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
   },
   async upsertBandje(bandje) {
     await db.bandjes.put(bandje);
@@ -704,7 +720,7 @@ const DB = {
       const { error } = await supa.from('bandjes').upsert(bandje);
       if (error) throw error;
     }
-    catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
+    catch { await _wachtrijToevoegen({ tabel: 'bandjes', actie: 'upsert', data: JSON.stringify(bandje), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
   },
   async verwijderBandje(bandje_uid) {
     await db.bandjes.delete(bandje_uid);
@@ -712,7 +728,7 @@ const DB = {
       const { error } = await supa.from('bandjes').delete().eq('bandje_uid', bandje_uid);
       if (error) throw error;
     }
-    catch { await db.sync_queue.add({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
+    catch { await _wachtrijToevoegen({ tabel: 'bandjes', actie: 'delete', data: JSON.stringify({ bandje_uid }), aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0 }); }
   },
   async getBandjesVoor(koppeling_id) {
     return db.bandjes.where('koppeling_id').equals(koppeling_id).toArray();

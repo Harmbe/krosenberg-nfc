@@ -59,6 +59,9 @@ function resetState() {
   state.rpc = {};
   globalThis._setupOproepen.length = 0;
   _ls.clear();
+  // Standaard: een geactiveerd apparaat (backup-token aanwezig) — anders zet
+  // _wachtrijToevoegen() geen enkele schrijf-sync in de wachtrij (F42).
+  _ls.set('kr_kassa_tokens', JSON.stringify({ access_token: 'geldig', refresh_token: 'r' }));
   for (const k of Object.keys(_els)) delete _els[k];
 }
 
@@ -148,7 +151,8 @@ globalThis.supabase = { createClient: () => maakFakeSupabase() };
     '\n;Object.assign(globalThis, { DB, db, supa, berekenOpenstaandModel, _isAuthFout, ' +
     '_wachtOpStamdata, _herstelSessie, syncWachtrij, _syncWachtrijEenmaal, laadVanSupabase, ' +
     'updateSyncBadge, _rpcOfWachtrij, _isGeldSyncItem, _herstelGeparkeerdeItems, ' +
-    'verzamelMislukteSync, herprobeerMislukteSync, verwijderMislukteSyncItem });\n})();';
+    'verzamelMislukteSync, herprobeerMislukteSync, verwijderMislukteSyncItem, ' +
+    'schrijf, _wachtrijToevoegen, _apparaatOoitGeactiveerd });\n})();';
   vm.runInThisContext(wrapped, { filename: DB_JS });
 }
 
