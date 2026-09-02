@@ -1,0 +1,13 @@
+{
+  "name": "krosenberg-kassa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-first kassa-PWA. De app zelf (index.html + db.js) draait puur op CDN-scripts en heeft geen build. Deze package.json bestaat alleen voor de sync-tests in scripts/.",
+  "scripts": {
+    "test": "node scripts/test-sync.js"
+  },
+  "devDependencies": {
+    "dexie": "3.2.7",
+    "fake-indexeddb": "6.2.5"
+  }
+}

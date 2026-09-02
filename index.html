@@ -1354,6 +1354,14 @@
         <button onclick="forceerSync()" style="padding:8px 14px;background:var(--kr-forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem">Nu synchroniseren</button>
         <button onclick="wisWachtrij()" style="padding:8px 14px;background:#e74c3c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem">Wachtrij wissen</button>
       </div>
+      <div id="mislukte-sync-blok" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--kr-sand)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <b style="font-size:0.9rem;color:#c0392b">Niet-gesynchroniseerd</b>
+          <button onclick="herprobeerAlleMislukteSync()" style="padding:6px 12px;background:var(--kr-forest);color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.85rem">Alles opnieuw proberen</button>
+        </div>
+        <p style="font-size:0.8rem;color:var(--kr-muted);margin-bottom:8px">Deze items zijn na 5 pogingen opgegeven. "Opnieuw proberen" als de oorzaak (internet, apparaat-sessie) verholpen is. "Verwijderen" alleen als je zeker weet dat het niet meer hoeft.</p>
+        <div id="mislukte-sync-lijst"></div>
+      </div>
     </div>
 
     <div class="beheer-card" style="border:2px solid #e74c3c">
@@ -1948,14 +1956,16 @@ async function toonRekening(uid) {
   document.getElementById('rek-betaald').textContent    = '€' + totaalBetaald.toFixed(2).replace('.', ',');
   document.getElementById('rek-totaal').textContent     = '€' + totaalGeconsumeerd.toFixed(2).replace('.', ',');
 
-  // Nieuwste betaling bepaalt de grens: consumptions ná die betaling zijn "Open"
-  const grensTs = lidBet[0]?.betaald_op || '';
+  // Eén model, gelijk aan de server: betalingen als pot langs de consumpties
+  // (oud → nieuw) leggen (zie berekenOpenstaandModel() in db.js) — niet meer
+  // "alles ná de laatste betaling".
+  const { status: regelStatus } = berekenOpenstaandModel(lidLog, lidBet);
 
   document.getElementById('rek-log-tbody').innerHTML = lidLog.length === 0
     ? '<tr><td colspan="4" style="color:var(--kr-muted);padding:10px">Geen consumpties</td></tr>'
     : lidLog.map(r => {
         const d = new Date(r.geregistreerd_op);
-        const open = r.geregistreerd_op > grensTs;
+        const open = (regelStatus.get(r.id) || 'open') !== 'voldaan';
         return `<tr>
           <td>${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</td>
           <td>${esc(r.omschrijving)}</td>
@@ -2784,14 +2794,15 @@ async function renderAdmin() {
   const log        = await DB.getLog();
   const betalingen = await DB.getBetalingen();
 
-  // Bereken openstaand dynamisch per lid
+  // Bereken openstaand dynamisch per lid — loopsaldo, gelijk aan de server
+  // (zie berekenOpenstaandModel() in db.js).
   const openPerUid = {};
   for (const g of Object.values(gasten)) {
     const uid = g.uid;
-    const logLid = log.filter(r => r.lid_uid === uid);
-    const betalingenLid = betalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
-    const laatste = betalingenLid[betalingenLid.length - 1] || null;
-    openPerUid[uid] = logLid.filter(r => !laatste || r.geregistreerd_op > laatste).reduce((s, r) => s + Number(r.totaal || 0), 0);
+    openPerUid[uid] = berekenOpenstaandModel(
+      log.filter(r => r.lid_uid === uid),
+      betalingen.filter(b => b.lid_uid === uid),
+    ).openstaand;
   }
 
   const persoonlijk = ([, g]) => g.type !== 'intern';
@@ -2885,6 +2896,7 @@ async function renderBeheer() {
   const autoPrintToggle = document.getElementById('auto-print-toggle');
   if (autoPrintToggle) autoPrintToggle.checked = getAutoPrint();
   await updateSyncBadge();
+  await renderMislukteSync();
 }
 
 function updateAfrekenenBlokVoor(uid) {
@@ -2922,31 +2934,39 @@ async function openBetaalscherm() {
   document.getElementById('betaald-btn').style.display = 'none';
   document.querySelectorAll('.betaal-optie').forEach(b => b.classList.remove('actief'));
 
-  // Consumptieoverzicht: haal log direct van Supabase voor volledigheid
+  // Consumptieoverzicht + af te rekenen bedrag. Eén model, gelijk aan de server
+  // (zie berekenOpenstaandModel() in db.js): loopsaldo = som(consumpties) −
+  // som(betalingen), en de betalingen als pot langs de bestellingen leggen om
+  // te bepalen welke nog "open" staan. Niet meer filteren op "ná de laatste
+  // betaling" — een laat-gesyncte of verkeerd getijdstempelde transactie zou
+  // het bedrag anders mis laten lopen.
   let openLog = [];
+  let berekendBedrag = 0;
   try {
-    const laasteBetaling = (await DB.getBetalingen())
-      .filter(b => b.lid_uid === huidigeBandje).map(b => b.betaald_op).sort().pop() || '';
+    const betalingenLid = (await DB.getBetalingen()).filter(b => b.lid_uid === huidigeBandje);
 
-    let logRijen = [];
+    let alleRijen = [];
     if (isOnline) {
-      let q = supa.from('consumptie_log').select('*, consumptie_regels(*)').eq('lid_uid', huidigeBandje).order('geregistreerd_op', { ascending: false });
-      if (laasteBetaling) q = q.gt('geregistreerd_op', laasteBetaling);
-      const { data } = await q;
-      logRijen = (data || []).map(r => ({
+      const { data } = await supa.from('consumptie_log')
+        .select('*, consumptie_regels(*)')
+        .eq('lid_uid', huidigeBandje)
+        .order('geregistreerd_op', { ascending: false });
+      alleRijen = (data || []).map(r => ({
         ...r,
         omschrijving: r.omschrijving || (r.consumptie_regels || []).map(x => `${x.aantal}× ${x.product_naam}`).join(', '),
       }));
     } else {
-      const alleLog = await DB.getLog();
-      logRijen = alleLog.filter(r => r.lid_uid === huidigeBandje && r.geregistreerd_op > laasteBetaling);
+      alleRijen = (await DB.getLog()).filter(r => r.lid_uid === huidigeBandje);
     }
-    openLog = logRijen;
-  } catch { openLog = []; }
+
+    const model = berekenOpenstaandModel(alleRijen, betalingenLid);
+    berekendBedrag = model.openstaand;
+    openLog = alleRijen
+      .filter(r => (model.status.get(r.id) || 'open') !== 'voldaan')
+      .sort((a, b) => String(b.geregistreerd_op || '').localeCompare(String(a.geregistreerd_op || '')));
+  } catch { openLog = []; berekendBedrag = 0; }
   _openBetaalLog = openLog;
 
-  // Bereken bedrag vanuit log (betrouwbaarder dan openstaand-veld)
-  const berekendBedrag = openLog.reduce((s, r) => s + Number(r.totaal), 0);
   document.getElementById('betaal-bedrag').textContent = '€' + berekendBedrag.toFixed(2).replace('.', ',');
 
   // Onder het minimum pinbedrag (Beheer → Instellingen → Kassa in de
@@ -3297,13 +3317,16 @@ async function rondAfrekeningLokaalAf(gast, betaaldBedrag, nieuwOpenstaand) {
 async function afrekenen(uid, wijze) {
   wijze = wijze || 'contant';
   const gast = gasten[uid];
-  // Openregels alleen voor de bon-mail; het af te rekenen bedrag bepaalt de server.
+  // Openregels alleen voor de bon-mail; het af te rekenen bedrag bepaalt de
+  // server. schatting/openLog via het gedeelde loopsaldo-model (db.js).
   const alleLog = await DB.getLog();
   const alleBetalingen = await DB.getBetalingen();
-  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
-  const laatste = betalingenLid[betalingenLid.length - 1] || null;
-  const openLog = alleLog.filter(r => r.lid_uid === uid && (!laatste || r.geregistreerd_op > laatste));
-  const schatting = Math.round(openLog.reduce((s, r) => s + Number(r.totaal || 0), 0) * 100) / 100;
+  const _model = berekenOpenstaandModel(
+    alleLog.filter(r => r.lid_uid === uid),
+    alleBetalingen.filter(b => b.lid_uid === uid),
+  );
+  const openLog = alleLog.filter(r => r.lid_uid === uid && (_model.status.get(r.id) || 'open') !== 'voldaan');
+  const schatting = _model.openstaand;
 
   if (schatting <= 0 && Number(gast.openstaand || 0) <= 0) { toonToast('Geen openstaand bedrag'); return; }
 
@@ -3864,6 +3887,7 @@ async function forceerSync() {
   toonToast('Synchroniseren…');
   await syncWachtrij();
   await updateSyncBadge();
+  await renderMislukteSync();
   toonToast('✅ Synchronisatie voltooid');
 }
 
@@ -3871,7 +3895,53 @@ async function wisWachtrij() {
   if (!confirm('Wachtrij wissen? Doe dit alleen als de data al in Supabase staat.')) return;
   await db.sync_queue.where('gesyncroniseerd').equals(0).modify({ gesyncroniseerd: 1 });
   await updateSyncBadge();
+  await renderMislukteSync();
   toonToast('✅ Wachtrij gewist');
+}
+
+// ── "Niet-gesynchroniseerd"-blok (Beheer → Synchronisatie) ──────────────────
+async function renderMislukteSync() {
+  const blok = document.getElementById('mislukte-sync-blok');
+  const lijst = document.getElementById('mislukte-sync-lijst');
+  if (!blok || !lijst) return;
+
+  const items = await verzamelMislukteSync();
+  if (items.length === 0) { blok.style.display = 'none'; lijst.innerHTML = ''; return; }
+  blok.style.display = '';
+
+  lijst.innerHTML = items.map(it => {
+    const wanneer = it.aangemaakt_op
+      ? new Date(it.aangemaakt_op).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : '—';
+    const regels = [
+      it.naam ? esc(it.naam) : (it.lid_uid ? esc(it.lid_uid) : null),
+      it.bedrag != null ? `€${Number(it.bedrag).toFixed(2).replace('.', ',')}` : null,
+    ].filter(Boolean).join(' · ');
+    const kleur = it.is_geld ? '#c0392b' : '#e67e22';
+    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid #f0ede6">
+      <div style="min-width:0">
+        <div style="font-size:0.88rem;font-weight:600;color:${kleur}">${esc(it.omschrijving)}${regels ? ` — ${regels}` : ''}</div>
+        <div style="font-size:0.76rem;color:var(--kr-muted)">${wanneer}${it.laatste_fout ? ` · ${esc(it.laatste_fout)}` : ''}</div>
+      </div>
+      <button onclick="verwijderMislukteSyncRij(${it.id})" style="flex:none;padding:5px 10px;background:none;border:1px solid var(--kr-leem);border-radius:7px;cursor:pointer;font-size:0.8rem;color:var(--kr-muted)">Verwijderen</button>
+    </div>`;
+  }).join('');
+}
+
+async function herprobeerAlleMislukteSync() {
+  toonToast('Opnieuw proberen…');
+  await herprobeerMislukteSync();
+  await updateSyncBadge();
+  await renderMislukteSync();
+  const rest = await verzamelMislukteSync();
+  toonToast(rest.length === 0 ? '✅ Alles alsnog verstuurd' : `⚠️ ${rest.length} nog steeds niet gelukt`);
+}
+
+async function verwijderMislukteSyncRij(id) {
+  if (!confirm('Dit item definitief verwijderen? Het wordt dan nooit meer naar Supabase gestuurd.')) return;
+  await verwijderMislukteSyncItem(id);
+  await renderMislukteSync();
+  toonToast('Item verwijderd');
 }
 
 async function doeSchoneLijst() {
@@ -3909,16 +3979,15 @@ async function renderPlekkenOverzicht() {
   // Bereken openstaand dynamisch op basis van log en betalingen
   const [alleLog, alleBetalingen] = await Promise.all([DB.getLog(), DB.getBetalingen()]);
 
-  // Bouw per uid een kaart: openstaand bedrag = som van consumpties na laatste betaling
+  // Openstaand bedrag per uid = loopsaldo, gelijk aan de server
+  // (berekenOpenstaandModel() in db.js).
   const openPerUid = {};
   for (const g of Object.values(gasten)) {
     const uid = g.uid;
-    const logLid = alleLog.filter(r => r.lid_uid === uid);
-    const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
-    const laatste = betalingenLid[betalingenLid.length - 1] || null;
-    openPerUid[uid] = logLid
-      .filter(r => !laatste || r.geregistreerd_op > laatste)
-      .reduce((s, r) => s + Number(r.totaal || 0), 0);
+    openPerUid[uid] = berekenOpenstaandModel(
+      alleLog.filter(r => r.lid_uid === uid),
+      alleBetalingen.filter(b => b.lid_uid === uid),
+    ).openstaand;
   }
 
   const plekken = Object.values(gasten);
@@ -3983,9 +4052,9 @@ async function renderPlekDetail() {
   const [alleLog, alleBetalingen] = await Promise.all([DB.getLog(), DB.getBetalingen()]);
   let log = uid ? alleLog.filter(r => r.lid_uid === uid) : [];
 
-  // Bepaal de laatste betaling voor dit lid → consumpties daarna zijn open
-  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
-  const laatsteBetaling = betalingenLid[betalingenLid.length - 1] || null;
+  // Open/voldaan bepalen op de VOLLEDIGE geschiedenis (loopsaldo-model, db.js),
+  // niet op de eventueel op datum gefilterde weergave hieronder.
+  const { status: regelStatus } = berekenOpenstaandModel(log, alleBetalingen.filter(b => b.lid_uid === uid));
 
   if (plekDetailVan) log = log.filter(r => (r.geregistreerd_op || '') >= plekDetailVan);
   if (plekDetailTot) {
@@ -4021,7 +4090,7 @@ async function renderPlekDetail() {
       <tbody>
         ${regels.map(r => {
           const t = new Date(r.geregistreerd_op).toLocaleTimeString('nl-NL', {hour:'2-digit',minute:'2-digit'});
-          const isOpen = !laatsteBetaling || r.geregistreerd_op > laatsteBetaling;
+          const isOpen = (regelStatus.get(r.id) || 'open') !== 'voldaan';
           if (isOpen) totaalOpen += Number(r.totaal || 0);
           const status = isOpen
             ? `<span style="font-size:0.75rem;font-weight:600;color:#c0392b;white-space:nowrap">openstaand</span>`
@@ -4064,16 +4133,16 @@ async function mailPlekOverzicht(plekCode) {
 
   const [alleLog, alleBetalingen] = await Promise.all([DB.getLog(), DB.getBetalingen()]);
   let log = uid ? alleLog.filter(r => r.lid_uid === uid) : [];
+
+  // Betaalstatus per regel op de VOLLEDIGE geschiedenis (loopsaldo-model, db.js).
+  const { status: regelStatus } = berekenOpenstaandModel(log, alleBetalingen.filter(b => b.lid_uid === uid));
+
   const van = huidigePlek === plekCode ? plekDetailVan : null;
   const tot = huidigePlek === plekCode ? plekDetailTot : null;
   if (van) log = log.filter(r => (r.geregistreerd_op || '') >= van);
   if (tot) log = log.filter(r => (r.geregistreerd_op || '') <= tot + 'T23:59:59');
 
   if (log.length === 0) { toonToast('Geen consumpties om te mailen.'); return; }
-
-  // Betaalstatus per regel
-  const betalingenLid = alleBetalingen.filter(b => b.lid_uid === uid).map(b => b.betaald_op).sort();
-  const laatsteBetaling = betalingenLid[betalingenLid.length - 1] || null;
 
   // Groepeer per dag
   const perDag = {};
@@ -4091,7 +4160,7 @@ async function mailPlekOverzicht(plekCode) {
         product: r.omschrijving || '—',
         aantal: 1,
         prijs: Number(r.totaal || 0),
-        open: !laatsteBetaling || r.geregistreerd_op > laatsteBetaling,
+        open: (regelStatus.get(r.id) || 'open') !== 'voldaan',
       })),
       dag_totaal: dagTotaal,
     };

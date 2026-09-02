@@ -211,6 +211,10 @@ async function _rpcOfWachtrij(rpc, args) {
     return data || null;
   } catch (e) {
     console.warn(`[rpc] ${rpc} nu mislukt — in de wachtrij:`, e?.message || e);
+    // Ziet het er naar uit dat de sessie is weggevallen (RPC als 'anon' →
+    // permission denied), probeer die dan op de achtergrond te herstellen zodat
+    // de wachtrij-verwerking straks wél door de RLS/EXECUTE-check komt.
+    if (_isAuthFout(e)) _herstelSessie('rpc-call');
     await db.sync_queue.add({
       rpc, args: JSON.stringify(args),
       aangemaakt_op: new Date().toISOString(), gesyncroniseerd: 0,
@@ -218,6 +222,91 @@ async function _rpcOfWachtrij(rpc, args) {
     await updateSyncBadge();
     return null;
   }
+}
+
+// Een auth-/rechtenfout herkennen: Postgres 42501 (permission denied op de
+// SECURITY DEFINER-RPC's, of RLS die een write tegenhoudt) of een 401/verlopen
+// JWT van PostgREST. Zulke fouten liggen niet aan het wachtrij-item zelf — de
+// tablet draait zonder geldige sessie — dus ze mogen de pogingen-teller niet
+// opstoken.
+function _isAuthFout(fout) {
+  if (!fout) return false;
+  const code = String(fout.code ?? fout.status ?? '');
+  const msg = String(fout.message || '').toLowerCase();
+  return code === '42501' || code === '401' || code === 'PGRST301' ||
+         msg.includes('permission denied') || msg.includes('jwt') ||
+         msg.includes('not authorized') || msg.includes('row-level security') ||
+         msg.includes('row level security');
+}
+
+// Herstelt de Supabase-sessie als die is weggevallen: access token verlopen +
+// autorefresh mislukt, of het refresh-token dat in een andere tab al 'gebruikt'
+// is (Supabase roteert die). Zonder geldige sessie draait elke geld-RPC als
+// 'anon' → 42501 en belanden alle transacties na 5 pogingen in de permanente
+// foutbak. Lukt herstel niet, dan het setup-scherm tonen zodat beheer het
+// apparaat opnieuw activeert.
+let _sessieHerstelBezig = false;
+async function _herstelSessie(aanleiding) {
+  if (_sessieHerstelBezig) return false;
+  _sessieHerstelBezig = true;
+  try {
+    let { data: { session } } = await supa.auth.getSession();
+
+    if (!session) {
+      const opgeslagen = localStorage.getItem(_SESSIE_SLEUTEL);
+      if (opgeslagen) {
+        try {
+          const { data, error } = await supa.auth.setSession(JSON.parse(opgeslagen));
+          if (!error && data.session) session = data.session;
+        } catch { /* onleesbaar — hieronder afgehandeld */ }
+      }
+    }
+    if (!session) {
+      const { data, error } = await supa.auth.refreshSession();
+      if (!error && data.session) session = data.session;
+    }
+
+    if (session) {
+      console.info('[sessie] hersteld na', aanleiding);
+      return true;
+    }
+    console.warn('[sessie] herstel mislukt na', aanleiding, '— apparaat opnieuw activeren vereist');
+    localStorage.removeItem(_SESSIE_SLEUTEL);
+    if (typeof toonSetupScherm === 'function') {
+      toonSetupScherm('De apparaat-sessie is verlopen. Activeer het apparaat opnieuw met de sleutel — openstaande transacties blijven bewaard en worden daarna vanzelf verstuurd.');
+    }
+    return false;
+  } catch (e) {
+    console.warn('[sessie] herstel wierp een fout:', e?.message || e);
+    return false;
+  } finally {
+    _sessieHerstelBezig = false;
+  }
+}
+
+// Wacht een geld-RPC nog op stamdata die zélf ook nog in de wachtrij staat —
+// een nieuw lid of artikel dat vóór de bijbehorende bestelling omhoog moet? Dan
+// is een 'mislukt' geen echte fout maar een kwestie van volgorde: die poging
+// niet meetellen, anders ligt de bestelling na 5 rondes permanent in de
+// foutbak terwijl 'ie ná de stamdata-sync gewoon zou slagen.
+async function _wachtOpStamdata(rpcItem) {
+  let args;
+  try { args = JSON.parse(rpcItem.args); } catch { return false; }
+  const open = await db.sync_queue.where('gesyncroniseerd').equals(0).toArray();
+  const pendLid = new Set(), pendProduct = new Set();
+  for (const it of open) {
+    if (it.actie !== 'upsert' || !it.data) continue;
+    let d;
+    try { d = JSON.parse(it.data); } catch { continue; }
+    if (it.tabel === 'leden' && d.uid) pendLid.add(d.uid);
+    if (it.tabel === 'producten' && d.id) pendProduct.add(d.id);
+  }
+  if (args.p_lid_uid && pendLid.has(args.p_lid_uid)) return true;
+  if (args.p_product_id && pendProduct.has(args.p_product_id)) return true;
+  for (const x of (args.p_items || [])) {
+    if (x && pendProduct.has(x.product_id)) return true;
+  }
+  return false;
 }
 
 // ── Sync-wachtrij verwerken ────────────────────────────────────────────────────
@@ -245,6 +334,12 @@ async function syncWachtrij() {
 }
 
 async function _syncWachtrijEenmaal() {
+  // Eenmalig de na 5 pogingen geparkeerde items terugzetten zodra er weer een
+  // geldige sessie is — die zijn meestal gestrand door een tijdelijk weggevallen
+  // sessie of een volgorde-afhankelijkheid die inmiddels is opgelost. Lukt het
+  // daarna nóg niet, dan blijven ze definitief mislukt (auto_herprobeerd = 1).
+  await _herstelGeparkeerdeItems();
+
   const wachtrij = await db.sync_queue.where('gesyncroniseerd').equals(0).toArray();
   for (const item of wachtrij) {
     const pogingen = item.pogingen || 0;
@@ -261,8 +356,21 @@ async function _syncWachtrijEenmaal() {
       if (item.rpc) {
         // Geldmutatie via RPC — idempotent op de client-uuid in args, dus een
         // herhaalde poging is veilig.
-        const { error } = await supa.rpc(item.rpc, JSON.parse(item.args));
+        const args = JSON.parse(item.args);
+        const { data: rpcData, error } = await supa.rpc(item.rpc, args);
         ok = !error; fout = error;
+        // Offline afgerekend bedrag was een schatting; nu de server het echte
+        // loopsaldo teruggeeft de lokale betalingsrij bijwerken. Bleek er niets
+        // verschuldigd (betaling_id == null), dan boekte de server geen rij —
+        // de lokale voorlopige rij ook weggooien i.p.v. als spookbetaling laten
+        // staan.
+        if (ok && item.rpc === 'kassa_reken_af' && rpcData && args.p_betaling_id) {
+          if (rpcData.betaling_id == null) {
+            await db.betalingen.delete(args.p_betaling_id);
+          } else if (rpcData.bedrag != null) {
+            await db.betalingen.update(args.p_betaling_id, { bedrag: Number(rpcData.bedrag) });
+          }
+        }
       } else {
         data = JSON.parse(item.data);
         // Strip velden die niet in het Supabase-schema horen (voorkomt 400-fouten)
@@ -289,37 +397,78 @@ async function _syncWachtrijEenmaal() {
 
     if (ok) {
       await db.sync_queue.update(item.id, { gesyncroniseerd: 1 });
+    } else if (_isAuthFout(fout)) {
+      // Geen geldige sessie → niets in deze wachtrij gaat door de RLS/EXECUTE-
+      // check. De poging niet meetellen (het item is in orde) en de rest van de
+      // ronde staken; sessie herstellen en, als dat lukt, meteen opnieuw.
+      console.warn('[sync] auth-fout — sessie herstellen, poging niet meegeteld:', fout?.message || fout);
+      if (await _herstelSessie('sync')) _syncNogmaals = true;
+      break;
+    } else if (item.rpc && await _wachtOpStamdata(item)) {
+      console.info(`[sync] ${item.rpc} wacht op nog niet-gesyncte stamdata (nieuw lid/artikel) — poging niet meegeteld`);
     } else {
+      const fouttekst = String((fout && (fout.message || fout.code)) || 'onbekende fout');
       console.warn(`[sync] Poging ${pogingen + 1} mislukt voor ${item.rpc || item.tabel + '/' + item.actie}:`, fout, data || item.args);
-      await db.sync_queue.update(item.id, { pogingen: pogingen + 1 });
+      await db.sync_queue.update(item.id, { pogingen: pogingen + 1, laatste_fout: fouttekst });
     }
   }
   updateSyncBadge();
 }
 
+// Welke sync-items gaan over geld (betaling/bestelling/voorraadmutatie)? Die
+// verdienen bij een permanente mislukking de dringende "waarschuw beheer"; een
+// gestrande stamdata-bewerking (lid/artikel/plek/bandje) is minder alarmerend.
+function _isGeldSyncItem(it) {
+  return it.rpc === 'kassa_boek_consumptie' || it.rpc === 'kassa_reken_af' ||
+         it.rpc === 'kassa_vul_voorraad_aan' ||
+         it.tabel === 'consumptie_log' || it.tabel === 'betalingen' || it.tabel === 'voorraad_log';
+}
+
+// Zet de na 5 pogingen geparkeerde items (gesyncroniseerd = 2) één keer terug
+// in de wachtrij zodra er weer een geldige Supabase-sessie is. auto_herprobeerd
+// voorkomt dat een écht kapot item elke ronde opnieuw 5 pogingen verstookt.
+async function _herstelGeparkeerdeItems() {
+  const kandidaten = (await db.sync_queue.where('gesyncroniseerd').equals(2).toArray())
+    .filter(it => !it.auto_herprobeerd);
+  if (!kandidaten.length) return;
+  const { data: { session } } = await supa.auth.getSession();
+  if (!session) return; // zonder sessie heeft terugzetten nu geen zin
+  for (const it of kandidaten) {
+    await db.sync_queue.update(it.id, { gesyncroniseerd: 0, pogingen: 0, auto_herprobeerd: 1 });
+  }
+  console.info(`[sync] ${kandidaten.length} geparkeerd(e) item(s) automatisch opnieuw geprobeerd (sessie weer geldig)`);
+}
+
 async function updateSyncBadge() {
-  const wachtend  = await db.sync_queue.where('gesyncroniseerd').equals(0).count();
-  // gesyncroniseerd==2 = na 5 pogingen definitief opgegeven. Dat is een
-  // consumptie of betaling die de server nooit heeft gehaald — omzetverlies.
-  // Dat mag niet stil in een console.warn verdwijnen: hier zichtbaar en
-  // blijvend tonen tot beheer het heeft afgehandeld (zie verzamelMislukteSync).
-  const mislukt = await db.sync_queue.where('gesyncroniseerd').equals(2).count();
+  const wachtend      = await db.sync_queue.where('gesyncroniseerd').equals(0).count();
+  // gesyncroniseerd==2 = na 5 pogingen definitief opgegeven. Splits geld
+  // (betaling/bestelling/voorraadmutatie — mogelijk omzetverlies, dringend) van
+  // een gestrande stamdata-bewerking (lid/artikel/plek/bandje — hinderlijk maar
+  // geen geld). Blijft zichtbaar tot beheer het afhandelt (zie het
+  // "Niet-gesynchroniseerd"-blok bij Beheer → Synchronisatie).
+  const mislukteItems = await db.sync_queue.where('gesyncroniseerd').equals(2).toArray();
+  const geldMislukt   = mislukteItems.filter(_isGeldSyncItem).length;
+  const overigMislukt = mislukteItems.length - geldMislukt;
+
+  const stukjes = [];
+  if (geldMislukt)   stukjes.push(`${geldMislukt} betaling${geldMislukt === 1 ? '' : 'en'}/bestelling${geldMislukt === 1 ? '' : 'en'} NIET verstuurd — waarschuw beheer`);
+  if (overigMislukt) stukjes.push(`${overigMislukt} wijziging${overigMislukt === 1 ? '' : 'en'} niet doorgekomen`);
 
   const el = document.getElementById('sync-wachtrij');
   if (el) {
-    el.textContent = mislukt > 0
-      ? `⚠️ ${mislukt} NIET gesynchroniseerd — waarschuw beheer`
+    el.textContent = stukjes.length
+      ? '⚠️ ' + stukjes.join(' · ')
       : (wachtend > 0 ? `⏳ ${wachtend} wachtend` : '');
-    el.style.color = mislukt > 0 ? '#e74c3c' : '#e67e22';
-    el.style.fontWeight = mislukt > 0 ? '700' : '400';
+    el.style.color = geldMislukt ? '#e74c3c' : '#e67e22';
+    el.style.fontWeight = geldMislukt ? '700' : '400';
   }
 
   const detail = document.getElementById('sync-wachtrij-detail');
   if (detail) {
-    if (mislukt > 0) {
-      detail.textContent = `⚠️ ${mislukt} transactie${mislukt === 1 ? '' : 's'} NIET gesynchroniseerd — noteer deze en waarschuw beheer`;
-      detail.style.color = '#e74c3c';
-      detail.style.fontWeight = '700';
+    if (stukjes.length) {
+      detail.textContent = '⚠️ ' + stukjes.join(' · ') + ' — zie de lijst hieronder';
+      detail.style.color = geldMislukt ? '#e74c3c' : '#e67e22';
+      detail.style.fontWeight = geldMislukt ? '700' : '600';
     } else {
       detail.textContent = wachtend > 0 ? `⏳ ${wachtend} item${wachtend === 1 ? '' : 's'} wachtend` : '✅ Alles gesynchroniseerd';
       detail.style.color = '';
@@ -328,8 +477,21 @@ async function updateSyncBadge() {
   }
 }
 
-// Ophalen van de definitief mislukte sync-items voor handmatige reconciliatie
-// door beheer (bedrag, lid, tijdstip). Aangeroepen vanuit het beheerscherm.
+// Leesbare omschrijving van een sync-item (voor het beheerscherm).
+function _omschrijfSyncItem(it) {
+  const map = {
+    kassa_boek_consumptie: 'Bestelling', kassa_reken_af: 'Afrekening',
+    kassa_vul_voorraad_aan: 'Voorraad aanvullen',
+    leden: 'Lid', producten: 'Artikel', plekken: 'Plek', bandjes: 'Bandje',
+    categorie_instellingen: 'Categorie-instelling', voorraad_log: 'Voorraadmutatie',
+    consumptie_log: 'Bestelling', betalingen: 'Afrekening',
+  };
+  if (it.rpc) return map[it.rpc] || it.rpc;
+  const actie = it.actie === 'delete' ? ' verwijderen' : it.actie === 'upsert' ? ' wijzigen' : '';
+  return (map[it.tabel] || it.tabel || 'Item') + actie;
+}
+
+// Ophalen van de definitief mislukte sync-items voor het beheerscherm.
 async function verzamelMislukteSync() {
   const items = await db.sync_queue.where('gesyncroniseerd').equals(2).toArray();
   return items.map(it => {
@@ -338,7 +500,10 @@ async function verzamelMislukteSync() {
     return {
       id: it.id,
       soort: it.rpc || `${it.tabel}/${it.actie}`,
+      omschrijving: _omschrijfSyncItem(it),
+      is_geld: _isGeldSyncItem(it),
       aangemaakt_op: it.aangemaakt_op,
+      laatste_fout: it.laatste_fout || null,
       lid_uid: d.p_lid_uid || d.lid_uid || d.uid || null,
       naam: d.naam || null,
       bedrag: d.totaal ?? d.bedrag ?? null,
@@ -346,12 +511,24 @@ async function verzamelMislukteSync() {
   });
 }
 
-// Zet een definitief mislukt item terug in de wachtrij voor een nieuwe poging
-// (nadat beheer bv. de verbinding heeft hersteld).
+// Zet de definitief mislukte items terug in de wachtrij voor een nieuwe poging
+// (nadat beheer bv. de verbinding of de sessie heeft hersteld). auto_herprobeerd
+// wordt gewist zodat het automatische herstel ze daarna ook weer mag oppakken.
 async function herprobeerMislukteSync() {
   const items = await db.sync_queue.where('gesyncroniseerd').equals(2).toArray();
-  for (const it of items) await db.sync_queue.update(it.id, { gesyncroniseerd: 0, pogingen: 0 });
+  for (const it of items) {
+    await db.sync_queue.update(it.id, { gesyncroniseerd: 0, pogingen: 0, auto_herprobeerd: 0, laatste_fout: null });
+  }
   await syncWachtrij();
+}
+
+// Eén definitief mislukt item weggooien (beheer heeft het handmatig afgehandeld
+// of het is niet meer relevant — bv. een wijziging op een inmiddels verwijderd
+// lid). Alleen items die al opgegeven zijn (gesyncroniseerd = 2).
+async function verwijderMislukteSyncItem(id) {
+  const it = await db.sync_queue.get(id);
+  if (it && it.gesyncroniseerd === 2) await db.sync_queue.delete(id);
+  await updateSyncBadge();
 }
 
 // ── Initieel laden: Supabase → IndexedDB ──────────────────────────────────────
@@ -386,8 +563,21 @@ async function laadVanSupabase() {
       await db.log.clear();
       await db.betalingen.clear();
       await db.voorraad_log.clear();
+      // Ook nog niet-gesyncte geldtransacties van vóór de reset weggooien —
+      // anders stuurt syncWachtrij() ze straks alsnog naar de net geleegde
+      // server en herrijst er een bestelling/afrekening (met een saldo weer
+      // > 0). syncWachtrij() draait continu, laadVanSupabase() alleen bij het
+      // starten, dus zonder dit wint de replay. Pendende stamdata-wijzigingen
+      // (lid/artikel/plek/bandje) en voorraadaanvullingen blijven wél staan.
+      const teWissen = (await db.sync_queue.toArray())
+        .filter(it => it.rpc === 'kassa_boek_consumptie' || it.rpc === 'kassa_reken_af' ||
+                      it.tabel === 'consumptie_log' || it.tabel === 'betalingen')
+        .map(it => it.id);
+      if (teWissen.length) await db.sync_queue.bulkDelete(teWissen);
       localStorage.setItem('kr_laatste_reset', resetStamp);
-      console.info('[reset] lokale transactiecache geleegd (server-reset', resetStamp + ')');
+      console.info('[reset] lokale transactiecache geleegd (server-reset', resetStamp + ',',
+                   teWissen.length, 'wachtrij-items verwijderd)');
+      if (typeof updateSyncBadge === 'function') await updateSyncBadge();
     }
 
     if (leden)     { await db.leden.bulkPut(leden);         await reconcileVerwijderingen('leden', leden); }
@@ -437,6 +627,41 @@ async function reconcileVerwijderingen(tabel, serverRijen) {
     await db[tabel].bulkDelete(teVerwijderen);
     console.info(`[sync] ${teVerwijderen.length} lokale ${tabel}-rij(en) verwijderd — elders van de server verwijderd`);
   }
+}
+
+// ── Openstaand: één model, gelijk aan de server ──────────────────────────────
+// De server (kassa_herbereken_openstaand, migrations/20260829_04) rekent puur
+// met sommen:  openstaand = max(0, som(consumpties) − som(betalingen)).  Geen
+// tijdstippen, geen "sinds de laatste betaling". Dat model nemen we in de hele
+// kassa-app over, zodat een laat-gesyncte bestelling of een betaling met een
+// verschoven tijdstempel het saldo niet meer scheef kan trekken.
+//
+// Voor de weergave ("welke bestelling is al voldaan?") lopen we de betalingen
+// als één pot langs de consumpties van oud naar nieuw: zolang de pot toereikt
+// is een regel voldaan, daarna deels/open. De som van de niet-voldane regels
+// is per definitie gelijk aan `openstaand` hierboven.
+//
+//   consumpties : [{ id, totaal, geregistreerd_op }]  (één lid)
+//   betalingen  : [{ bedrag }]                          (één lid)
+//   → { openstaand:Number, status:Map<log-id,'voldaan'|'deels'|'open'> }
+function berekenOpenstaandModel(consumpties, betalingen) {
+  let pot = (betalingen || []).reduce((s, b) => s + Number(b.bedrag || 0), 0);
+  const rijen = [...(consumpties || [])].sort((a, b) =>
+    String(a.geregistreerd_op || '').localeCompare(String(b.geregistreerd_op || '')));
+  const status = new Map();
+  let open = 0;
+  for (const r of rijen) {
+    const bedrag = Number(r.totaal || 0);
+    if (pot >= bedrag) {
+      pot -= bedrag;
+      status.set(r.id, 'voldaan');
+    } else {
+      open += bedrag - pot;
+      status.set(r.id, pot > 0 ? 'deels' : 'open');
+      pot = 0;
+    }
+  }
+  return { openstaand: Math.max(0, Math.round(open * 100) / 100), status };
 }
 
 // ── Data-toegang (altijd via IndexedDB) ───────────────────────────────────────
@@ -537,15 +762,29 @@ const DB = {
   // Geeft het RPC-resultaat terug ({ bedrag, openstaand }) of null bij offline.
   async rekenAf(betaling) {
     const id = crypto.randomUUID();
+    // Tijdstip expliciet vastleggen én meesturen. Gaat de RPC in de wachtrij
+    // (offline afgerekend), dan zou de server anders now() nemen op het veel
+    // latere syncmoment — waardoor een bestelling die de gast tussen het echte
+    // betaalmoment en de sync doet, ten onrechte als "al betaald" telt.
+    const op = new Date().toISOString();
     const res = await _rpcOfWachtrij('kassa_reken_af', {
       p_betaling_id: id,
       p_lid_uid: betaling.lid_uid,
       p_wijze: betaling.wijze || 'contant',
+      p_op: op,
     });
+    // Kwam de RPC nú door en bleek er niets verschuldigd, dan boekte de server
+    // geen betalingsrij — lokaal er dan ook geen aanmaken (anders een
+    // spookbetaling van €0). Bij een echt bedrag is de serverwaarde leidend;
+    // bij res == null (offline, in de wachtrij) de schatting als voorlopige
+    // waarde, die _syncWachtrijEenmaal() na de sync bijwerkt of opruimt.
+    if (res && (res.betaling_id == null || Number(res.bedrag || 0) <= 0)) {
+      return res;
+    }
     await db.betalingen.put({
       id, lid_uid: betaling.lid_uid, naam: betaling.naam, plek: betaling.plek,
       bedrag: res?.bedrag ?? betaling.schatting ?? 0,
-      wijze: betaling.wijze || 'contant', betaald_op: new Date().toISOString(),
+      wijze: betaling.wijze || 'contant', betaald_op: op,
     });
     return res;
   },
