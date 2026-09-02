@@ -1366,27 +1366,13 @@
 
     <div class="beheer-card" style="border:2px solid #e74c3c">
       <h3>🗑️ Schone lijst / nieuw seizoen</h3>
-      <p style="font-size:0.85rem;color:var(--kr-muted);margin-bottom:10px">
-        Verwijdert <b>alle bestellingen en betalingen</b> en zet alle openstaande
-        saldi op nul. Voor na de testperiode, of bij de start van een nieuw seizoen
-        (nadat alle rekeningen van het vorige seizoen voldaan zijn). Er wordt eerst
-        automatisch een back-up gemaakt. Leden, artikelen, plekken en bandjes
-        blijven staan. Alle tablets legen hun lijst bij de eerstvolgende sync.
+      <p style="font-size:0.85rem;color:var(--kr-muted)">
+        Alle bestellingen en betalingen wissen en de saldi op nul zetten gebeurt
+        voortaan vanuit de <b>reserveringen-beheeromgeving</b>
+        (Beheer&nbsp;→&nbsp;Financiën&nbsp;→&nbsp;Kassa), niet meer op de tablet.
+        Zodra het daar is uitgevoerd, leegt elke tablet automatisch zijn lijst bij
+        de eerstvolgende synchronisatie.
       </p>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem;margin-bottom:10px">
-        <input type="checkbox" id="reset-ook-voorraad" style="width:16px;height:16px">
-        Ook de voorraad-mutatiegeschiedenis wissen (voorraadstanden zelf blijven)
-      </label>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="reset-bevestig" placeholder="typ RESET" autocapitalize="characters"
-          oninput="document.getElementById('reset-knop').disabled = this.value !== 'RESET'"
-          style="width:130px;padding:8px 10px;border:1px solid var(--kr-leem);border-radius:8px;font-size:0.9rem">
-        <button id="reset-knop" disabled onclick="doeSchoneLijst()"
-          style="padding:8px 16px;background:#e74c3c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;opacity:1">
-          Alles wissen
-        </button>
-        <span id="reset-status" style="font-size:0.85rem;color:var(--kr-muted)"></span>
-      </div>
     </div>
 
     <div class="beheer-card">
@@ -3944,27 +3930,11 @@ async function verwijderMislukteSyncRij(id) {
   toonToast('Item verwijderd');
 }
 
-async function doeSchoneLijst() {
-  const ookVoorraad = document.getElementById('reset-ook-voorraad').checked;
-  const bevat = ookVoorraad ? 'bestellingen, betalingen én de voorraadgeschiedenis' : 'bestellingen en betalingen';
-  if (!confirm(`ALLE ${bevat} worden verwijderd en alle saldi op nul gezet.\n\nEr wordt eerst een back-up gemaakt. Dit kan niet ongedaan gemaakt worden vanuit de app.\n\nDoorgaan?`)) return;
-
-  const knop = document.getElementById('reset-knop');
-  const status = document.getElementById('reset-status');
-  knop.disabled = true;
-  status.textContent = 'Bezig…';
-  try {
-    const res = await DB.resetTransacties({ ookVoorraad });
-    const v = res?.verwijderd || {};
-    status.textContent = `✅ ${v.betalingen || 0} betalingen, ${v.consumpties || 0} bestellingen gewist · back-up: ${res?.backup || '?'}`;
-    toonToast('✅ Schone lijst — de app wordt herladen');
-    setTimeout(() => location.reload(), 2500);
-  } catch (e) {
-    knop.disabled = false;
-    status.textContent = '⚠️ Mislukt: ' + (e?.message || e);
-    toonToast('⚠️ Reset mislukt — ' + (e?.message || e));
-  }
-}
+// "Schone lijst" is verplaatst naar de reserveringen-beheeromgeving
+// (/api/kassa/reset achter beheer-auth). De EXECUTE op kassa_reset_transacties
+// is voor 'authenticated' ingetrokken, dus een tablet kan de reset niet meer
+// zelf uitvoeren — hij pikt 'm alleen op via kassa_meta.laatste_reset in
+// laadVanSupabase().
 
 // ── Plekken overzicht ──────────────────────────────────────────────────────
 let huidigePlek = null;

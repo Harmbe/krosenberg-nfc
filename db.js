@@ -818,30 +818,9 @@ const DB = {
     return res;
   },
 
-  // "Schone lijst": wist server-side ALLE bestellingen + betalingen en zet alle
-  // saldi op 0 (na de testperiode, of bij seizoensstart nadat alle rekeningen
-  // voldaan zijn). Maakt eerst een back-up in schema kassa_backup. De server
-  // markeert de reset zodat elke andere tablet bij de eerstvolgende sync ook
-  // z'n lokale cache leegt. Geeft {backup, verwijderd:{...}} terug.
-  async resetTransacties({ ookVoorraad = false } = {}) {
-    const { data, error } = await supa.rpc('kassa_reset_transacties', {
-      p_bevestiging: 'RESET',
-      p_ook_voorraad: !!ookVoorraad,
-    });
-    if (error) throw error;
-    // Meteen lokaal opruimen op dit toestel (de andere volgen via kassa_meta).
-    await db.log.clear();
-    await db.betalingen.clear();
-    if (ookVoorraad) await db.voorraad_log.clear();
-    // Alleen de transactie-wachtrij-items wissen — pendende stamdata-wijzigingen
-    // (lid/artikel/plek/bandje) blijven staan.
-    const wachtrij = await db.sync_queue.toArray();
-    const teWissen = wachtrij.filter(it =>
-      it.rpc === 'kassa_boek_consumptie' || it.rpc === 'kassa_reken_af' ||
-      it.tabel === 'consumptie_log' || it.tabel === 'betalingen' ||
-      (ookVoorraad && (it.rpc === 'kassa_vul_voorraad_aan' || it.tabel === 'voorraad_log'))
-    ).map(it => it.id);
-    if (teWissen.length) await db.sync_queue.bulkDelete(teWissen);
-    return data;
-  },
+  // "Schone lijst" is verplaatst naar de reserveringen-beheeromgeving
+  // (/api/kassa/reset achter beheer-auth, service-role). De EXECUTE op
+  // kassa_reset_transacties is voor 'authenticated' ingetrokken (F10), dus een
+  // tablet kan de reset niet meer zelf starten — die wordt hier alleen nog
+  // opgepikt via kassa_meta.laatste_reset in laadVanSupabase().
 };
